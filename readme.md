@@ -27,7 +27,7 @@ The result:
   the smaller the amount of uncertainty (and number of times that we still need to regress to calling onto the clock to determine
   the exact time).
 * The <i>time-serial positions</i> within an interval can be ordered by their `SerialPosition` property, still allowing for e.g.
-  strict LRU orderering. Alternatively, it also makes it possible to apply LRU ordering to a <i>cluster</i> of cache entries (all having
+  strict LRU ordering. Alternatively, it also makes it possible to apply LRU ordering to a <i>cluster</i> of cache entries (all having
   equal `LastAccessed.DateTimeOffset` - now also a <i>time-serial position</i>).
 
 # Context
