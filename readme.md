@@ -36,7 +36,7 @@ account the fact that `CacheEntry.LastAccessed` is often updated with `DateTimeO
 * Sliding expiration
 * LRU-based cache eviction during cache compaction
 
-After some local experimentation with `Lazy<T>` (as suchested in my initial comment) and
+After some local experimentation with `Lazy<T>` (as suggested in my initial comment) and
 [`LazyInitializer.EnsureInitialized()`](https://docs.microsoft.com/en-us/dotnet/api/system.threading.lazyinitializer.ensureinitialized?view=net-5.0#System_Threading_LazyInitializer_EnsureInitialized__1___0__System_Boolean__System_Object__System_Func___0__),
 I did get some promising results, but realized that it resulted in some quite convoluted code. Hence, I decided to first create and
 share an abstraction that reflects the idea behind a potential direction for further optimization.
