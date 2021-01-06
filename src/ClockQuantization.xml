@@ -1,0 +1,236 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ClockQuantization</name>
+    </assembly>
+    <members>
+        <member name="T:ClockQuantization.ClockQuantizer">
+            <summary>
+            <see cref="T:ClockQuantization.ClockQuantizer"/> is a utility class that abstracts quantization of the reference clock. Essentially, the reference clock continuum is divided into discrete intervals with a <i>maximum</i> length of <see cref="F:ClockQuantization.ClockQuantizer.MaxIntervalTimeSpan"/>.
+            A so-called metronome is used to start a new <see cref="T:ClockQuantization.Interval"/> every time when <see cref="F:ClockQuantization.ClockQuantizer.MaxIntervalTimeSpan"/> has passed. A <see cref="T:ClockQuantization.Interval"/> may be cut short when an "out-of-cadance" advance operation is performed - such operation is triggered by
+            <see cref="M:ClockQuantization.ClockQuantizer.Advance"/> calls, as well as by <see cref="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted"/> and <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events.
+            </summary>
+            <remarks>Under certain conditions, an advance operation may be incurred by <see cref="M:ClockQuantization.ClockQuantizer.EnsureInitializedExactTimeSerialPosition(ClockQuantization.LazyTimeSerialPosition@,System.Boolean)"/> calls.</remarks>
+        </member>
+        <member name="F:ClockQuantization.ClockQuantizer.MaxIntervalTimeSpan">
+            <summary>
+            The maximum <see cref="T:System.TimeSpan"/> of each <see cref="T:ClockQuantization.Interval"/>, defined at <see cref="T:ClockQuantization.ClockQuantizer"/> construction.
+            </summary>
+        </member>
+        <member name="P:ClockQuantization.ClockQuantizer.CurrentInterval">
+            <value>The current <see cref="T:ClockQuantization.Interval"/> in the <see cref="T:ClockQuantization.ClockQuantizer"/>'s temporal context.</value>
+            <remarks>A <see cref="T:ClockQuantization.ClockQuantizer"/> starts in an inhibited state. Only after the first advance operation, will <see cref="P:ClockQuantization.ClockQuantizer.CurrentInterval"/> have a non-<see langword="null"/> value.</remarks>
+        </member>
+        <member name="P:ClockQuantization.ClockQuantizer.UtcNow">
+            <value>Returns the <see cref="P:ClockQuantization.ISystemClock.UtcNow"/> value of the reference clock.</value>
+            <remarks>Depending on the actual reference clock implementation, this may or may not incur an expensive system call.</remarks>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.Advance">
+            <summary>
+            Establishes a new <b>lower bound</b> on the "last seen" exact <see cref="T:System.DateTimeOffset"/> within the
+            <see cref="T:ClockQuantization.ClockQuantizer"/>'s temporal context: the reference clock's <see cref="P:ClockQuantization.ISystemClock.UtcNow"/>.
+            </summary>
+            <returns>The newly started <see cref="T:ClockQuantization.Interval"/>.</returns>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.EnsureInitializedExactTimeSerialPosition(ClockQuantization.LazyTimeSerialPosition@,System.Boolean)">
+            <summary>
+            If <paramref name="position"/> does not have an exact <see cref="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset"/> yet, it will be initialized with one. In every
+            situation where initialization is still required, this will incur a call into the reference clock's <see cref="P:ClockQuantization.ISystemClock.UtcNow"/>.
+            </summary>
+            <param name="position">Reference to an (on-stack) <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> which may or may not have been initialized.</param>
+            <param name="advance">Indicates if the <see cref="T:ClockQuantization.ClockQuantizer"/> should perform an advance operation. This is advised in situations where non-exact
+            positions may still be acquired in the same <see cref="P:ClockQuantization.ClockQuantizer.CurrentInterval"/> and exact ordering (e.g. in a cache LRU eviction algorithm) might be adversely affected.</param>
+            <remarks>
+            <para>An advance operation will incur an <see cref="E:ClockQuantization.ClockQuantizer.Advanced"/> event.</para>
+            <para>Depending on the actual reference clock implementation, this may or may not incur an expensive system call.</para>
+            </remarks>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.EnsureInitializedTimeSerialPosition(ClockQuantization.LazyTimeSerialPosition@)">
+            <summary>
+            If <paramref name="position"/> does not have a <see cref="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset"/> yet, it will be initialized with one.
+            </summary>
+            <param name="position">Reference to an (on-stack) <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> which may or may not have been initialized.</param>
+            <remarks>
+            If the <see cref="T:ClockQuantization.ClockQuantizer"/> did not perform a first advance operation yet, the result will be an exact position
+            (incurring a call into the reference clock's <see cref="P:ClockQuantization.ISystemClock.UtcNow"/>). Otherwise, returns a position bound to
+            <see cref="P:ClockQuantization.ClockQuantizer.CurrentInterval"/>'s <see cref="P:ClockQuantization.Interval.DateTimeOffset"/>, but with an incremented <see cref="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition"/>.
+            </remarks>
+        </member>
+        <member name="T:ClockQuantization.ClockQuantizer.NewIntervalEventArgs">
+            <summary>
+            Represents the ephemeral conditions at the time of an advance operation.
+            </summary>
+        </member>
+        <member name="F:ClockQuantization.ClockQuantizer.NewIntervalEventArgs.DateTimeOffset">
+            <summary>
+            The <see cref="T:System.DateTimeOffset"/> within the temporal context when the new <see cref="T:ClockQuantization.Interval"/> was started.
+            </summary>
+        </member>
+        <member name="F:ClockQuantization.ClockQuantizer.NewIntervalEventArgs.IsMetronomic">
+            <summary>
+            <see langword="true"/> if the new <see cref="T:ClockQuantization.Interval"/> was created due to a metronome "tick", <see langword="false"/> otherwise.
+            </summary>
+        </member>
+        <member name="F:ClockQuantization.ClockQuantizer.NewIntervalEventArgs.GapToPriorIntervalExpectedEnd">
+            <summary>
+            An optional <see cref="T:System.TimeSpan"/> value representing the gap between the start of the new interval and the expected end of
+            <see cref="P:ClockQuantization.ClockQuantizer.CurrentInterval"/>, if such gap is in fact detected.
+            </summary>
+        </member>
+        <member name="E:ClockQuantization.ClockQuantizer.Advanced">
+            <summary>
+            This event is fired direclty after the start of a new <see cref="T:ClockQuantization.Interval"/> within the <see cref="T:ClockQuantization.ClockQuantizer"/>'s temporal context.
+            </summary>
+        </member>
+        <member name="E:ClockQuantization.ClockQuantizer.MetronomeTicked">
+            <summary>
+            This event is fired almost immediately after each "tick" of the metronome. Every <see cref="E:ClockQuantization.ClockQuantizer.MetronomeTicked"/> event is preceeded by an advance operation and a corresponding <see cref="E:ClockQuantization.ClockQuantizer.Advanced"/> event, ensuring that a new <see cref="P:ClockQuantization.ClockQuantizer.CurrentInterval"/> reference
+            has been established in the <see cref="T:ClockQuantization.ClockQuantizer"/>'s temporal context at the time of firing.
+            </summary>
+            <remarks>
+            Under typical operating conditions, the intermittent elapse of every <see cref="F:ClockQuantization.ClockQuantizer.MaxIntervalTimeSpan"/> interval is signaled by the <see cref="T:ClockQuantization.ClockQuantizer"/>'s built-in metronome.
+            Alternatively, metronome "ticks" may be generated by an external source that is firing <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events.
+            </remarks>
+            <seealso cref="T:ClockQuantization.ISystemClockTemporalContext"/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.OnAdvanced(ClockQuantization.ClockQuantizer.NewIntervalEventArgs)">
+            <summary>
+            Raises the <see cref="E:ClockQuantization.ClockQuantizer.Advanced"/> event. May be overriden in derived implementations.
+            </summary>
+            <param name="e">A <see cref="T:ClockQuantization.ClockQuantizer.NewIntervalEventArgs"/> instance</param>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.OnMetronomeTicked(ClockQuantization.ClockQuantizer.NewIntervalEventArgs)">
+            <summary>
+            Raises the <see cref="E:ClockQuantization.ClockQuantizer.MetronomeTicked"/> event. May be overriden in derived implementations.
+            </summary>
+            <param name="e">A <see cref="T:ClockQuantization.ClockQuantizer.NewIntervalEventArgs"/> instance</param>
+            <remarks>
+            <see cref="E:ClockQuantization.ClockQuantizer.MetronomeTicked"/> events are always preceded with an <see cref="E:ClockQuantization.ClockQuantizer.Advanced"/> event. The value of <paramref name="e"/> is the same in both consecutive events.
+            </remarks>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.#ctor(ClockQuantization.ISystemClock,System.TimeSpan)">
+            <summary>
+            Creates a new <see cref="T:ClockQuantization.ClockQuantizer"/> instance.
+            </summary>
+            <param name="clock">The reference <see cref="T:ClockQuantization.ISystemClock"/></param>
+            <param name="maxIntervalTimeSpan">The maximum <see cref="T:System.TimeSpan"/> of each <see cref="T:ClockQuantization.Interval"/></param>
+            <remarks>
+            If <paramref name="clock"/> also implements <see cref="T:ClockQuantization.ISystemClockTemporalContext"/>, the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external
+            <see cref="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="P:ClockQuantization.ISystemClockTemporalContext.ProvidesMetronome"/> is <see langword="true"/>,
+            the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
+            </remarks>
+        </member>
+        <member name="T:ClockQuantization.Interval">
+            <summary>
+            Represents an interval within a <see cref="T:ClockQuantization.ClockQuantizer"/>'s temporal context.
+            </summary>
+            <remarks>
+            <para>
+            Within the reference frame of an <see cref="T:ClockQuantization.Interval"/>, there is no notion of time; there is only notion of the order
+            in which <see cref="T:ClockQuantization.LazyTimeSerialPosition"/>s are issued.
+            </para>
+            <para>
+            Whereas <see cref="P:ClockQuantization.ClockQuantizer.CurrentInterval"/> is always progressing with intervals of at most <see cref="F:ClockQuantization.ClockQuantizer.MaxIntervalTimeSpan"/> length,
+            several <see cref="T:ClockQuantization.Interval"/>s may be active concurrently.
+            </para>
+            </remarks>
+        </member>
+        <member name="P:ClockQuantization.Interval.DateTimeOffset">
+            <value>
+            The <see cref="P:ClockQuantization.Interval.DateTimeOffset"/> within the temporal context when the <see cref="T:ClockQuantization.Interval"/> was started.
+            </value>
+        </member>
+        <member name="M:ClockQuantization.Interval.EnsureInitializedTimeSerialPosition(ClockQuantization.Interval,ClockQuantization.LazyTimeSerialPosition@)">
+            <summary>
+            If <paramref name="position"/> does not have a <see cref="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset"/> yet, it will be initialized with one,
+            based off <paramref name="interval"/>'s <see cref="P:ClockQuantization.Interval.DateTimeOffset"/> and its monotonically increasing internal serial position.
+            </summary>
+            <param name="interval">The interval to create the <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> off.</param>
+            <param name="position">Reference to an (on-stack) <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> which may or may not have been initialized.</param>
+        </member>
+        <member name="M:ClockQuantization.Interval.NewTimeSerialPosition">
+            <summary>
+            Creates a new <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> based off the <see cref="T:ClockQuantization.Interval"/>'s <see cref="P:ClockQuantization.Interval.DateTimeOffset"/> and its monotonically increasing internal serial position.
+            </summary>
+            <returns>A new <see cref="T:ClockQuantization.LazyTimeSerialPosition"/></returns>
+            <remarks>
+            A <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> created at the time when a new <see cref="T:ClockQuantization.Interval"/> is created (e.g. during
+            <seealso cref="M:ClockQuantization.ClockQuantizer.EnsureInitializedExactTimeSerialPosition(ClockQuantization.LazyTimeSerialPosition@,System.Boolean)"/>) will have <see cref="P:ClockQuantization.LazyTimeSerialPosition.IsExact"/> equal
+            to <see langword="true"/>.
+            </remarks>
+        </member>
+        <member name="T:ClockQuantization.LazyTimeSerialPosition">
+            <summary>
+            <para>
+            Represents a point in time, expressed as a combination of <see cref="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset"/> and <see cref="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition"/>. Its value may be unitialized,
+            as indicated by its <see cref="P:ClockQuantization.LazyTimeSerialPosition.HasValue"/> property.
+            </para>
+            <para>
+            When initialized (i.e. when <see cref="P:ClockQuantization.LazyTimeSerialPosition.HasValue"/> equals <see langword="true"/>), the following rules apply:
+            <list type="bullet">
+            <item>Issuance of an "exact" <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> can only occur at <see cref="T:ClockQuantization.Interval"/> start. By definition, <see cref="P:ClockQuantization.LazyTimeSerialPosition.IsExact"/> will equal
+            <see langword="true"/>, <see cref="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition"/> will equal <c>1u</c> and <see cref="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset"/> will equal <see cref="P:ClockQuantization.Interval.DateTimeOffset"/>.</item>
+            <item>Any <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> issued off the same <see cref="T:ClockQuantization.Interval"/> with <see cref="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition"/> N (N &gt; 1u) was issued
+            at a later point in (continuous) time than the <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> with <see cref="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition"/> equals N-1 and was issued at an earlier
+            point in (continuous) time than any <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> with <see cref="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition"/> &gt; N.</item>
+            </list>
+            </para>
+            </summary>
+            <remarks>
+            With several methods available to lazily initialize a <see cref="T:ClockQuantization.LazyTimeSerialPosition"/> by reference, it is possible to create <see cref="T:ClockQuantization.LazyTimeSerialPosition"/>s
+            on-stack and initialize them as late as possible and only if deemed necessary for the operation/decision at hand.
+            <seealso cref="M:ClockQuantization.Interval.EnsureInitializedTimeSerialPosition(ClockQuantization.Interval,ClockQuantization.LazyTimeSerialPosition@)"/>
+            <seealso cref="M:ClockQuantization.ClockQuantizer.EnsureInitializedExactTimeSerialPosition(ClockQuantization.LazyTimeSerialPosition@,System.Boolean)"/>
+            <seealso cref="M:ClockQuantization.ClockQuantizer.EnsureInitializedTimeSerialPosition(ClockQuantization.LazyTimeSerialPosition@)"/>
+            </remarks>
+        </member>
+        <member name="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset">
+            <value>Returns the <see cref="T:System.DateTimeOffset"/> assigned to the current value.</value>
+            <exception cref="T:System.InvalidOperationException">When <see cref="P:ClockQuantization.LazyTimeSerialPosition.HasValue"/> is <see langword="false"/>.</exception>
+        </member>
+        <member name="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition">
+            <value>Returns the serial position assigned to the current value.</value>
+            <exception cref="T:System.InvalidOperationException">When <see cref="P:ClockQuantization.LazyTimeSerialPosition.HasValue"/> is <see langword="false"/>.</exception>
+        </member>
+        <member name="P:ClockQuantization.LazyTimeSerialPosition.HasValue">
+            <value>Returns <see langword="true"/> if a value is assigned, <see langword="false"/> otherwise.</value>
+        </member>
+        <member name="P:ClockQuantization.LazyTimeSerialPosition.IsExact">
+            <value>Returns <see langword="true"/> if a value is assigned and said value represents the first <see cref="P:ClockQuantization.LazyTimeSerialPosition.SerialPosition"/> issued at <see cref="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset"/>. In other words,
+            the value was assigned exactly at <see cref="P:ClockQuantization.LazyTimeSerialPosition.DateTimeOffset"/>.</value>
+        </member>
+        <member name="T:ClockQuantization.ISystemClock">
+            <summary>
+            Abstracts the system clock to facilitate synthetic clocks (e.g. for testing).
+            </summary>
+        </member>
+        <member name="P:ClockQuantization.ISystemClock.UtcNow">
+            <value>
+            The current system time in UTC.
+            </value>
+        </member>
+        <member name="T:ClockQuantization.ISystemClockTemporalContext">
+            <summary>
+            Represents traits of the temporal context
+            </summary>
+        </member>
+        <member name="P:ClockQuantization.ISystemClockTemporalContext.ProvidesMetronome">
+            <value>
+            <see langword="true"/> if the temporal context provides a metronome feature - i.e., if it fires <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events.
+            </value>
+        </member>
+        <member name="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted">
+            <summary>
+            An event that can be raised to inform listeners that the <see cref="T:ClockQuantization.ISystemClock"/> was adjusted.
+            </summary>
+            <remarks>
+            This will typically be used with synthetic clocks only.
+            </remarks>
+        </member>
+        <member name="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked">
+            <summary>
+            An event that can be raised to inform listeners that a metronome "tick" occurred.
+            </summary>
+        </member>
+    </members>
+</doc>
