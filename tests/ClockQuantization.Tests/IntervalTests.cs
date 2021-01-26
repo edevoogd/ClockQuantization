@@ -11,7 +11,7 @@ namespace ClockQuantization.Tests
     public class IntervalTests
     {
         [Fact]
-        public void Interval_NewTimeSerialPosition_ByDefinitionCannotBeExact()
+        public void Interval_NewClockOffsetSerialPosition_ByDefinitionCannotBeExact()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -24,7 +24,7 @@ namespace ClockQuantization.Tests
             var interval = quantizer.Advance();
 
             // Execute
-            var position = interval.NewTimeSerialPosition();
+            var position = interval.NewClockOffsetSerialPosition();
 
             // A position acquired after the creation of an interval *by definition* can never be exact
 
@@ -34,7 +34,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void Interval_EnsureInitializedTimeSerialPosition_ByDefinitionCannotBeExact()
+        public void Interval_EnsureInitializedClockOffsetSerialPosition_ByDefinitionCannotBeExact()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -47,8 +47,8 @@ namespace ClockQuantization.Tests
             var interval = quantizer.Advance();
 
             // Execute
-            var position = default(LazyTimeSerialPosition);
-            Interval.EnsureInitializedTimeSerialPosition(interval, ref position);
+            var position = default(LazyClockOffsetSerialPosition);
+            Interval.EnsureInitializedClockOffsetSerialPosition(interval, ref position);
 
             // A position acquired after the creation of an interval *by definition* can never be exact
 
@@ -58,7 +58,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void Interval_ConsecutivelyAcquiredTimeSerialPositionsAreIssuedNonStrictlyMonotonically()
+        public void Interval_ConsecutivelyAcquiredClockOffsetSerialPositionsAreIssuedNonStrictlyMonotonically()
         {
             const int positionCount = 100;
             var metronomeOptions = MetronomeOptions.Manual;
@@ -75,11 +75,11 @@ namespace ClockQuantization.Tests
             var sequence = new List<uint>(positionCount);
             for (var i = 0; i < positionCount; i++)
             {
-                var position = default(LazyTimeSerialPosition);
-                Interval.EnsureInitializedTimeSerialPosition(interval, ref position);
+                var position = default(LazyClockOffsetSerialPosition);
+                Interval.EnsureInitializedClockOffsetSerialPosition(interval, ref position);
                 sequence.Add(position.SerialPosition);
 
-                Assert.Equal(interval.DateTimeOffset, position.DateTimeOffset);
+                Assert.Equal(interval.ClockOffset, position.ClockOffset);
             }
 
             // Test
@@ -91,7 +91,7 @@ namespace ClockQuantization.Tests
 
 
         [Fact]
-        public void Interval_ConcurrentlyAcquiredTimeSerialPositionsAreIssuedNonStrictlyMonotonically()
+        public void Interval_ConcurrentlyAcquiredClockOffsetSerialPositionsAreIssuedNonStrictlyMonotonically()
         {
             const int positionPerPartitionCount = 16 * 1024;
             const int partitionCount = 16;
@@ -123,8 +123,8 @@ namespace ClockQuantization.Tests
                     // Execute
                     for (var i = range.Item1; i < range.Item2; i++)
                     {
-                        var position = default(LazyTimeSerialPosition);
-                        Interval.EnsureInitializedTimeSerialPosition(interval, ref position);
+                        var position = default(LazyClockOffsetSerialPosition);
+                        Interval.EnsureInitializedClockOffsetSerialPosition(interval, ref position);
                         stringOfPerRangeSequences[i] = position.SerialPosition;
                     }
 

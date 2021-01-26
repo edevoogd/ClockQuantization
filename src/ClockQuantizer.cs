@@ -8,27 +8,16 @@ namespace ClockQuantization
     /// A so-called metronome is used to start a new <see cref="Interval"/> every time when <see cref="ClockQuantizer.MaxIntervalTimeSpan"/> has passed. A <see cref="Interval"/> may be cut short when an "out-of-cadance" advance operation is performed - such operation is triggered by
     /// <see cref="Advance()"/> calls, as well as by <see cref="ISystemClockTemporalContext.ClockAdjusted"/> and <see cref="ISystemClockTemporalContext.MetronomeTicked"/> events.
     /// </summary>
-    /// <remarks>Under certain conditions, an advance operation may be incurred by <see cref="EnsureInitializedExactTimeSerialPosition(ref LazyTimeSerialPosition, bool)"/> calls.</remarks>
+    /// <remarks>Under certain conditions, an advance operation may be incurred by <see cref="EnsureInitializedExactClockOffsetSerialPosition(ref LazyClockOffsetSerialPosition, bool)"/> calls.</remarks>
     public class ClockQuantizer //: IAsyncDisposable, IDisposable
     {
-        private struct AdvancePreparationInfo
-        {
-            public Interval Interval;
-            public ClockQuantizer.NewIntervalEventArgs EventArgs;
-
-            public AdvancePreparationInfo(Interval interval, ClockQuantizer.NewIntervalEventArgs eventArgs)
-            {
-                Interval = interval;
-                EventArgs = eventArgs;
-            }
-        }
-
         private readonly ISystemClock _clock;
         private Interval? _currentInterval;
         private readonly System.Threading.Timer? _metronome;
 
 
-        // Properties
+        #region Fields & properties
+
         /// <summary>
         /// The maximum <see cref="TimeSpan"/> of each <see cref="Interval"/>, defined at <see cref="ClockQuantizer"/> construction.
         /// </summary>
@@ -38,12 +27,66 @@ namespace ClockQuantization
         /// <remarks>A <see cref="ClockQuantizer"/> starts in an inhibited state. Only after the first advance operation, will <see cref="CurrentInterval"/> have a non-<see langword="null"/> value.</remarks>
         public Interval? CurrentInterval { get => _currentInterval; }
 
+        /// <value>
+        /// Represents the clock-specific offset at which the next <see cref="MetronomeTicked"/> event is expected.
+        /// </value>
+        /// <remarks>
+        /// <para>While uninitialized initially, <see cref="NextMetronomicClockOffset"/> will always have a value after the first advance operation. Basically, having
+        /// <c>CurrentInterval.ClockOffset + TimeSpanToClockOffsetUnits(MaxIntervalTimeSpan)</c> pre-calculated at the start of each metronomic interval, ammortizes the cost of this typical calculation during time-based decisions.</para>
+        /// <para>When an "out-of-cadance" (i.e. non-metronomic) advance operation is performed, <see cref="CurrentInterval"/> (and its offset) will update, but not <see cref="NextMetronomicClockOffset"/>.</para>
+        /// </remarks>
+        public long? NextMetronomicClockOffset { get; private set; }
+
+
         /// <value>Returns the <see cref="ISystemClock.UtcNow"/> value of the reference clock.</value>
         /// <remarks>Depending on the actual reference clock implementation, this may or may not incur an expensive system call.</remarks>
-        public DateTimeOffset UtcNow { get => NewDisconnectedInterval().DateTimeOffset; }
+        public DateTimeOffset UtcNow { get => _clock.UtcNow; }
+
+        /// <value>Returns the <see cref="ISystemClock.UtcNowClockOffset"/> value of the reference clock.</value>
+        public long UtcNowClockOffset { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _clock.UtcNowClockOffset; }
+
+        #endregion
 
 
-        // Basic quantizer operations
+        #region Time representation conversions
+
+        /// <summary>
+        /// Converts a <see cref="DateTimeOffset"/> to an offset in clock-specific units (ticks).
+        /// </summary>
+        /// <param name="offset">The <see cref="DateTimeOffset"/> to convert</param>
+        /// <returns>An offset in clock-specific units.</returns>
+        /// <seealso cref="ISystemClock.ClockOffsetUnitsPerMillisecond"/>
+        public long DateTimeOffsetToClockOffset(DateTimeOffset offset) => _clock.DateTimeOffsetToClockOffset(offset);
+
+        /// <summary>
+        /// Converts an offset in clock-specific units (ticks) to a <see cref="DateTimeOffset"/>.
+        /// </summary>
+        /// <param name="offset">The clock-specific offset to convert</param>
+        /// <returns>A <see cref="DateTimeOffset"/> in UTC.</returns>
+        /// <seealso cref="ISystemClock.ClockOffsetUnitsPerMillisecond"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public DateTimeOffset ClockOffsetToUtcDateTimeOffset(long offset) => _clock.ClockOffsetToUtcDateTimeOffset(offset);
+
+        /// <summary>
+        /// Converts a <see cref="TimeSpan"/> to a count of clock-specific offset units (ticks).
+        /// </summary>
+        /// <param name="timeSpan">The <see cref="TimeSpan"/> to convert</param>
+        /// <returns>The amount of clock-specific offset units covering the <see cref="TimeSpan"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long TimeSpanToClockOffsetUnits(TimeSpan timeSpan) => (long)(timeSpan.TotalMilliseconds * _clock.ClockOffsetUnitsPerMillisecond);
+
+        /// <summary>
+        /// Converts an amount of clock-specific offset units (ticks) to a <see cref="TimeSpan"/>.
+        /// </summary>
+        /// <param name="units">The amount of units to convert</param>
+        /// <returns>A <see cref="TimeSpan"/> covering the specified number of <paramref name="units"/>.</returns>
+        public TimeSpan ClockOffsetUnitsToTimeSpan(long units) => TimeSpan.FromMilliseconds((double)units / _clock.ClockOffsetUnitsPerMillisecond);
+
+        #endregion
+
+
+        #region Basic quantizer & clock-offset-serial position operations
+
         /// <summary>
         /// Establishes a new <b>lower bound</b> on the "last seen" exact <see cref="DateTimeOffset"/> within the
         /// <see cref="ClockQuantizer"/>'s temporal context: the reference clock's <see cref="ISystemClock.UtcNow"/>.
@@ -51,55 +94,57 @@ namespace ClockQuantization
         /// <returns>The newly started <see cref="Interval"/>.</returns>
         public Interval Advance() => Advance(metronomic: false);
 
-
-        // Basic position operations
         /// <summary>
-        /// If <paramref name="position"/> does not have an exact <see cref="LazyTimeSerialPosition.DateTimeOffset"/> yet, it will be initialized with one. In every
+        /// If <paramref name="position"/> does not have an exact <see cref="LazyClockOffsetSerialPosition.ClockOffset"/> yet, it will be initialized with one. In every
         /// situation where initialization is still required, this will incur a call into the reference clock's <see cref="ISystemClock.UtcNow"/>.
         /// </summary>
-        /// <param name="position">Reference to an (on-stack) <see cref="LazyTimeSerialPosition"/> which may or may not have been initialized.</param>
+        /// <param name="position">Reference to an (on-stack) <see cref="LazyClockOffsetSerialPosition"/> which may or may not have been initialized.</param>
         /// <param name="advance">Indicates if the <see cref="ClockQuantizer"/> should perform an advance operation. This is advised in situations where non-exact
         /// positions may still be acquired in the same <see cref="CurrentInterval"/> and exact ordering (e.g. in a cache LRU eviction algorithm) might be adversely affected.</param>
         /// <remarks>
         /// <para>An advance operation will incur an <see cref="ClockQuantizer.Advanced"/> event.</para>
         /// <para>Depending on the actual reference clock implementation, this may or may not incur an expensive system call.</para>
         /// </remarks>
-        public void EnsureInitializedExactTimeSerialPosition(ref LazyTimeSerialPosition position, bool advance)
+        public void EnsureInitializedExactClockOffsetSerialPosition(ref LazyClockOffsetSerialPosition position, bool advance)
         {
             if (!position.IsExact)    // test here as well to prevent unnecessary/unexpected Advance() if position was already initialzed
             {
                 if (advance)
                 {
                     var preparation = PrepareAdvance(metronomic: false);
-                    Interval.EnsureInitializedTimeSerialPosition(preparation.Interval, ref position);
+                    Interval.EnsureInitializedClockOffsetSerialPosition(preparation.Interval, ref position);
                     CommitAdvance(preparation);
                 }
                 else
                 {
-                    Interval.EnsureInitializedTimeSerialPosition(NewDisconnectedInterval(), ref position);
+                    Interval.EnsureInitializedClockOffsetSerialPosition(NewDisconnectedInterval(), ref position);
                 }
             }
         }
 
         /// <summary>
-        /// If <paramref name="position"/> does not have a <see cref="LazyTimeSerialPosition.DateTimeOffset"/> yet, it will be initialized with one.
+        /// If <paramref name="position"/> does not have an <see cref="LazyClockOffsetSerialPosition.ClockOffset"/> yet, it will be initialized with one.
         /// </summary>
-        /// <param name="position">Reference to an (on-stack) <see cref="LazyTimeSerialPosition"/> which may or may not have been initialized.</param>
+        /// <param name="position">Reference to an (on-stack) <see cref="LazyClockOffsetSerialPosition"/> which may or may not have been initialized.</param>
         /// <remarks>
-        /// If the <see cref="ClockQuantizer"/> did not perform a first advance operation yet, the result will be an exact position
+        /// If the <see cref="ClockQuantizer"/> had not performed a first advance operation yet, the result will be an exact position
         /// (incurring a call into the reference clock's <see cref="ISystemClock.UtcNow"/>). Otherwise, returns a position bound to
-        /// <see cref="CurrentInterval"/>'s <see cref="Interval.DateTimeOffset"/>, but with an incremented <see cref="LazyTimeSerialPosition.SerialPosition"/>.
+        /// <see cref="CurrentInterval"/>'s <see cref="Interval.ClockOffset"/>, but with an incremented <see cref="LazyClockOffsetSerialPosition.SerialPosition"/>.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void EnsureInitializedTimeSerialPosition(ref LazyTimeSerialPosition position)
+        public void EnsureInitializedClockOffsetSerialPosition(ref LazyClockOffsetSerialPosition position)
         {
             if (!position.HasValue)
             {
-                Interval.EnsureInitializedTimeSerialPosition(_currentInterval ?? NewDisconnectedInterval(), ref position);
+                Interval.EnsureInitializedClockOffsetSerialPosition(_currentInterval ?? NewDisconnectedInterval(), ref position);
             }
         }
 
-        // Events
+        #endregion
+
+
+        #region Events
+
         /// <summary>
         /// Represents the ephemeral conditions at the time of an advance operation.
         /// </summary>
@@ -160,6 +205,8 @@ namespace ClockQuantization
         /// </remarks>
         protected virtual void OnMetronomeTicked(NewIntervalEventArgs e) => MetronomeTicked?.Invoke(this, e);
 
+        #endregion
+
 
         // Construction
 
@@ -197,8 +244,20 @@ namespace ClockQuantization
             }
         }
 
+        private struct AdvancePreparationInfo
+        {
+            public Interval Interval;
+            public ClockQuantizer.NewIntervalEventArgs EventArgs;
+
+            public AdvancePreparationInfo(Interval interval, ClockQuantizer.NewIntervalEventArgs eventArgs)
+            {
+                Interval = interval;
+                EventArgs = eventArgs;
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Interval NewDisconnectedInterval() => new Interval(_clock.UtcNow);
+        private Interval NewDisconnectedInterval() => new Interval(UtcNowClockOffset);
 
         private Interval Advance(bool metronomic)
         {
@@ -223,7 +282,7 @@ namespace ClockQuantization
                 // Ignore potential *internal* metronome gap due to tiny clock jitter
                 if (!metronomic || _metronome is null)
                 {
-                    var gap = interval.DateTimeOffset - (previousInterval.DateTimeOffset + MaxIntervalTimeSpan);
+                    var gap = ClockOffsetUnitsToTimeSpan(interval.ClockOffset - previousInterval.ClockOffset) - MaxIntervalTimeSpan;
                     if (gap > TimeSpan.Zero)
                     {
                         detectedGap = gap;
@@ -231,15 +290,21 @@ namespace ClockQuantization
                 }
             }
 
-            var e = new NewIntervalEventArgs(interval.DateTimeOffset, metronomic, detectedGap);
+            var e = new NewIntervalEventArgs(_clock.ClockOffsetToUtcDateTimeOffset(interval.ClockOffset), metronomic, detectedGap);
 
             return new AdvancePreparationInfo(interval, e);
         }
 
         private Interval CommitAdvance(AdvancePreparationInfo preparation)
         {
-            _currentInterval = preparation.Interval.Seal(); ;
+            _currentInterval = preparation.Interval.Seal();
+
             var e = preparation.EventArgs;
+            if (e.IsMetronomic)
+            {
+                NextMetronomicClockOffset = _clock.DateTimeOffsetToClockOffset(e.DateTimeOffset + MaxIntervalTimeSpan);
+            }
+
             OnAdvanced(e);
 
             if (e.IsMetronomic)
