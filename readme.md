@@ -44,7 +44,7 @@ share an abstraction that reflects the idea behind a potential direction for fur
 ##### 2021-01-27
 Triggered by [@filipnavara](https://github.com/dotnet/runtime/pull/45842#issuecomment-761235581), the latest incarnation of Clock Quantization caters to a non-arbitrary clock-specific representation of <i>time-serial positions</i>, allowing reference clocks to:
 * Define the unit scale of clock offset ticks (`ISystemClock.ClockOffsetUnitsPerMillisecond`)
-* Take full control off back-and-forth conversion between clock-specific time representation and `System.DateTimeOffset`
+* Take full control of back-and-forth conversion between clock-specific time representation and `System.DateTimeOffset`
   * `ISystemClock.ClockOffsetToUtcDateTimeOffset()`
   * `ISystemClock.DateTimeOffsetToClockOffset()`.
 
