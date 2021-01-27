@@ -11,6 +11,34 @@ namespace ClockQuantization
         /// The current system time in UTC.
         /// </value>
         DateTimeOffset UtcNow { get; }
+
+        /// <value>
+        /// An offset (in ticks) representing the current system time in UTC.
+        /// </value>
+        /// <remarks>
+        /// Depending on implementation this may be an absolute value based on <see cref="DateTimeOffset.UtcTicks"/>, a relative value based on <see cref="Environment.TickCount64"/> etc.
+        /// </remarks>
+        long UtcNowClockOffset { get; }
+
+        /// <value>Represents the number of offset units (ticks) in 1 millisecond</value>
+        /// <seealso cref="UtcNowClockOffset"/>
+        /// <seealso cref="ClockOffsetToUtcDateTimeOffset"/>
+        /// <seealso cref="DateTimeOffsetToClockOffset"/>
+        long ClockOffsetUnitsPerMillisecond { get; }
+
+        /// <summary>
+        /// Converts <paramref name="offset"/> to a <see cref="DateTimeOffset"/> in UTC.
+        /// </summary>
+        /// <param name="offset">The offset to convert</param>
+        /// <returns>The corresponding <see cref="DateTimeOffset"/></returns>
+        DateTimeOffset ClockOffsetToUtcDateTimeOffset(long offset);
+
+        /// <summary>
+        /// Converts <paramref name="offset"/> to a clock-specific offset.
+        /// </summary>
+        /// <param name="offset">The offset to convert</param>
+        /// <returns>The corresponding clock-specific offset</returns>
+        long DateTimeOffsetToClockOffset(DateTimeOffset offset);
     }
 
     /// <summary>

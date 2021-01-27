@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 
 namespace ClockQuantization.Tests.Assets
 {
@@ -10,7 +11,11 @@ namespace ClockQuantization.Tests.Assets
         private class ManualClock : ISystemClock
         {
             private DateTimeOffset _now;
+            /// <inheritdoc/>
             public DateTimeOffset UtcNow { get => _now; }
+
+            /// <inheritdoc/>
+            public long UtcNowClockOffset => UtcNow.UtcTicks;
 
             public ManualClock(DateTimeOffset now)
             {
@@ -25,6 +30,14 @@ namespace ClockQuantization.Tests.Assets
             {
                 _now = now;
             }
+
+            /// <inheritdoc/>
+            public DateTimeOffset ClockOffsetToUtcDateTimeOffset(long offset) => new DateTimeOffset(offset, TimeSpan.Zero);
+
+            /// <inheritdoc/>
+            public long DateTimeOffsetToClockOffset(DateTimeOffset offset) => offset.UtcTicks;
+
+            public long ClockOffsetUnitsPerMillisecond => TimeSpan.TicksPerMillisecond;
         }
 
         private ManualClock? _manual;
@@ -78,6 +91,77 @@ namespace ClockQuantization.Tests.Assets
             GetUtcNow = getUtcNow;
             ProvidesMetronome = (_metronomeOptions = metronomeOptions) is not null;
             IsMetronomeRunning = ProvidesMetronome && ApplyMetronomeOptions(metronomeOptions!, Metronome_Ticked, out _metronome);
+
+#if NET5_0
+            var utcNow = DateTimeOffset.UtcNow;
+            var milliSecondsSinceGenesis = Environment.TickCount64; // The number of milliseconds elapsed since the system started.
+
+            UtcGenesis = utcNow - TimeSpan.FromMilliseconds(milliSecondsSinceGenesis);
+#endif
+        }
+
+#if NET5_0
+        public readonly DateTimeOffset UtcGenesis;
+#endif
+
+
+        /// <inheritdoc/>
+        public long UtcNowClockOffset
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#if NET5_0
+            get => HasExternalClock ? Environment.TickCount64 : _manual!.UtcNowClockOffset;
+#else
+            get => HasExternalClock ? UtcNow.UtcTicks : _manual!.UtcNowClockOffset;
+#endif
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public DateTimeOffset ClockOffsetToUtcDateTimeOffset(long offset)
+        {
+            if (!HasExternalClock)
+            {
+                return _manual!.ClockOffsetToUtcDateTimeOffset(offset);
+            }
+
+#if NET5_0
+            return UtcGenesis + TimeSpan.FromMilliseconds(offset);
+#else
+            return new DateTimeOffset(offset, TimeSpan.Zero);
+#endif
+        }
+
+        /// <inheritdoc/>
+        public long DateTimeOffsetToClockOffset(DateTimeOffset offset)
+        {
+            if (!HasExternalClock)
+            {
+                return _manual!.DateTimeOffsetToClockOffset(offset);
+            }
+
+#if NET5_0
+            return (long) (offset.UtcDateTime - UtcGenesis).TotalMilliseconds;
+#else
+            return offset.UtcTicks;
+#endif
+        }
+
+        public long ClockOffsetUnitsPerMillisecond
+        {
+            get
+            {
+                if (!HasExternalClock)
+                {
+                    return _manual!.ClockOffsetUnitsPerMillisecond;
+                }
+
+#if NET5_0
+                return 1;
+#else
+                return TimeSpan.TicksPerMillisecond;
+#endif
+            }
         }
 
         private bool ApplyMetronomeOptions(MetronomeOptions metronomeOptions, System.Threading.TimerCallback callback, out System.Threading.Timer? metronome)

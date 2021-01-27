@@ -27,7 +27,7 @@ namespace ClockQuantization.Tests
 
             quantizer.Advance();    // Advance once to ensure that we have a CurrentInterval
             Assert.NotNull(quantizer.CurrentInterval);
-            Assert.Equal(now, quantizer.CurrentInterval!.DateTimeOffset);
+            Assert.Equal(context.DateTimeOffsetToClockOffset(now), quantizer.CurrentInterval!.ClockOffset);
 
             quantizer.Advanced += Quantizer_Advanced;
 
@@ -70,7 +70,7 @@ namespace ClockQuantization.Tests
 
             quantizer.Advance();    // Advance once to ensure that we have a CurrentInterval
             Assert.NotNull(quantizer.CurrentInterval);
-            Assert.Equal(now, quantizer.CurrentInterval!.DateTimeOffset);
+            Assert.Equal(context.DateTimeOffsetToClockOffset(now), quantizer.CurrentInterval!.ClockOffset);
 
             quantizer.Advanced += Quantizer_Advanced;
 
@@ -112,7 +112,7 @@ namespace ClockQuantization.Tests
 
             quantizer.Advance();    // Advance once to ensure that we have a CurrentInterval
             Assert.NotNull(quantizer.CurrentInterval);
-            Assert.Equal(now, quantizer.CurrentInterval!.DateTimeOffset);
+            Assert.Equal(context.DateTimeOffsetToClockOffset(now), quantizer.CurrentInterval!.ClockOffset);
 
             quantizer.Advanced += Quantizer_Advanced;
 
@@ -155,7 +155,7 @@ namespace ClockQuantization.Tests
 
             quantizer.Advance();    // Advance once to ensure that we have a CurrentInterval
             Assert.NotNull(quantizer.CurrentInterval);
-            Assert.Equal(now, quantizer.CurrentInterval!.DateTimeOffset);
+            Assert.Equal(context.DateTimeOffsetToClockOffset(now), quantizer.CurrentInterval!.ClockOffset);
 
             quantizer.Advanced += Quantizer_Advanced;
 
@@ -330,6 +330,7 @@ namespace ClockQuantization.Tests
         public void ClockQuantizer_WithInternalMetronome_RaisesPeriodicMetronomeTickedEventsWithMetronomeJitterGapsIgnored()
         {
             // Juggling interval parameters to ensure we have an as little flaky as possible P95 test within approx. 1 second
+            const double targetP = 0.95;
             const int intervalCount = 25;
             var maxIntervalTimeSpan = TimeSpan.FromMilliseconds(42.5);
             var tolerance = TimeSpan.FromMilliseconds(15);  // this is just about Timer precision?
@@ -339,48 +340,64 @@ namespace ClockQuantization.Tests
             var considered = new System.Threading.Semaphore(intervalCount, intervalCount);
             var visited = new System.Threading.Semaphore(0, intervalCount);
 
-            var list = new List<DateTimeOffset>(intervalCount);
+            var list = new List<long>(intervalCount);
             quantizer.MetronomeTicked += Quantizer_MetronomeTicked;
 
             // Kick off!
-            var jitters = 0;
-            var outliers = 0;
-            var start = quantizer.Advance().DateTimeOffset;
+            var start = quantizer.Advance().ClockOffset;
 
             for (int i = 0; i < intervalCount; i++)
             {
-                visited.WaitOne(maxIntervalTimeSpan + TimeSpan.FromMilliseconds(250));
+                visited.WaitOne(maxIntervalTimeSpan + TimeSpan.FromMilliseconds(50));
             }
 
             Assert.Equal(intervalCount, list.Count);
 
+            // Estimate weighed average skew
+            double weighedSkewSum = 0.0;
             for (int i = 0; i < intervalCount; i++)
             {
-                var offset = list[i] - start;
-                if (!(offset >= i * maxIntervalTimeSpan - tolerance && offset <= i * maxIntervalTimeSpan + tolerance))
+                double skew = (double)list[i] - (i * maxIntervalTimeSpan.TotalMilliseconds * context.ClockOffsetUnitsPerMillisecond) - start;
+                var weighedSkewSumContribution = skew * (i + 1);
+                weighedSkewSum += weighedSkewSumContribution;
+            }
+
+            var weighedAverageSkew = weighedSkewSum / (intervalCount * (intervalCount + 1) / 2.0);
+
+            var jitters = 0;
+            var outliers = 0;
+            for (int i = 0; i < intervalCount; i++)
+            {
+                var delta = list[i] - (start + weighedAverageSkew);
+                var lower = (i * maxIntervalTimeSpan - tolerance).TotalMilliseconds * context.ClockOffsetUnitsPerMillisecond;
+                var upper = (i * maxIntervalTimeSpan + tolerance).TotalMilliseconds * context.ClockOffsetUnitsPerMillisecond;
+
+                if (!(delta >= lower && (delta <= upper)))
                 {
                     outliers++;
                 }
-                if (offset > i * maxIntervalTimeSpan)
+                if (delta > upper)
                 {
                     jitters++;
                 }
             }
 
+#if false
             // Ensure that we observed at least 1 jitter and validated that the gap was not registered in the event
-            Assert.True(jitters > 0);
+            Assert.True(jitters > 0, $"#jitters: {jitters}");
+#endif
 
-            // Ensure 95% of measurements within tolerance
+            // Ensure targetP % of measurements within tolerance
             var p = (double)outliers / (double)intervalCount;
-            Assert.True(p <= 0.05, $"P95 not achieved; actual: {1.0 - p}");
+            Assert.True(p <= (1 - targetP), $"P{(int) (targetP * 100.0)} not achieved; actual: {1.0 - p}");
 
             void Quantizer_MetronomeTicked(object? sender, ClockQuantizer.NewIntervalEventArgs e)
             {
                 if (considered.WaitOne(0))
                 {
-                    list.Add(e.DateTimeOffset);
+                    list.Add(context.DateTimeOffsetToClockOffset(e.DateTimeOffset));
 
-                    // Even jitter should not be registered on *internal* metronome
+                    // Jitter should not be administered on *internal* metronome events
                     Assert.False(e.GapToPriorIntervalExpectedEnd.HasValue);
                     
                     visited.Release();
@@ -389,7 +406,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedExactTimeSerialPosition_WithDefaultRef_ByDefinitionMustInitializeExactTimeSerialPosition()
+        public void ClockQuantizer_EnsureInitializedExactClockOffsetSerialPosition_WithDefaultRef_ByDefinitionMustInitializeExactClockOffsetSerialPosition()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -402,8 +419,8 @@ namespace ClockQuantization.Tests
             var interval = quantizer.Advance();
 
             // Execute
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: false);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: false);
 
             // Test
             Assert.True(position.HasValue);
@@ -411,7 +428,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedExactTimeSerialPosition_WithoutAdvanceAndWithExactRef_ByDefinitionRemainsUntouched()
+        public void ClockQuantizer_EnsureInitializedExactClockOffsetSerialPosition_WithoutAdvanceAndWithExactRef_ByDefinitionRemainsUntouched()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -423,8 +440,8 @@ namespace ClockQuantization.Tests
             var quantizer = new ClockQuantizer(context, metronomeOptions.MaxIntervalTimeSpan);
             var interval = quantizer.Advance();
 
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: false);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: false);
 
             Assert.True(position.HasValue);
             Assert.True(position.IsExact);
@@ -432,14 +449,14 @@ namespace ClockQuantization.Tests
             var copy = position;
 
             // Execute
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: false);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: false);
 
             // Test
             Assert.Equal(copy, position);
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedExactTimeSerialPosition_WithAdvanceAndWithExactRef_ByDefinitionRemainsUntouchedAndDoesNotAdvanceNorRaiseAdvancedEvent()
+        public void ClockQuantizer_EnsureInitializedExactClockOffsetSerialPosition_WithAdvanceAndWithExactRef_ByDefinitionRemainsUntouchedAndDoesNotAdvanceNorRaiseAdvancedEvent()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -452,8 +469,8 @@ namespace ClockQuantization.Tests
             var quantizer = new ClockQuantizer(context, metronomeOptions.MaxIntervalTimeSpan);
             var interval = quantizer.Advance();
 
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: false);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: false);
 
             Assert.True(position.HasValue);
             Assert.True(position.IsExact);
@@ -463,7 +480,7 @@ namespace ClockQuantization.Tests
             quantizer.Advanced += Quantizer_Advanced;
 
             // Execute
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: true);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: true);
             Assert.Same(interval, quantizer.CurrentInterval);
 
             // Test
@@ -478,7 +495,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedExactTimeSerialPosition_WithNonExactRef_ByDefinitionMustReInitializeExactTimeSerialPosition()
+        public void ClockQuantizer_EnsureInitializedExactClockOffsetSerialPosition_WithNonExactRef_ByDefinitionMustReInitializeExactClockOffsetSerialPosition()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -490,8 +507,8 @@ namespace ClockQuantization.Tests
             var quantizer = new ClockQuantizer(context, metronomeOptions.MaxIntervalTimeSpan);
             var interval = quantizer.Advance();
 
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedTimeSerialPosition(ref position);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedClockOffsetSerialPosition(ref position);
 
             Assert.True(position.HasValue);
             Assert.False(position.IsExact);
@@ -499,7 +516,7 @@ namespace ClockQuantization.Tests
             var copy = position;
 
             // Execute
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: false);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: false);
 
             // Test
             Assert.NotEqual(copy, position);
@@ -507,7 +524,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedTimeSerialPosition_AfterFirstAdvanceWithDefaultRef_ByDefinitionMustInitializeNonExactTimeSerialPosition()
+        public void ClockQuantizer_EnsureInitializedClockOffsetSerialPosition_AfterFirstAdvanceWithDefaultRef_ByDefinitionMustInitializeNonExactClockOffsetSerialPosition()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -520,17 +537,17 @@ namespace ClockQuantization.Tests
             quantizer.Advance();
 
             // Execute
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedTimeSerialPosition(ref position);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedClockOffsetSerialPosition(ref position);
 
             // Test
             Assert.True(position.HasValue);
             Assert.False(position.IsExact);
-            Assert.Equal(quantizer.CurrentInterval!.DateTimeOffset, position.DateTimeOffset);
+            Assert.Equal(quantizer.CurrentInterval!.ClockOffset, position.ClockOffset);
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedTimeSerialPosition_BeforeFirstAdvanceWithDefaultRef_ByDefinitionMustInitializeExactTimeSerialPosition()
+        public void ClockQuantizer_EnsureInitializedClockOffsetSerialPosition_BeforeFirstAdvanceWithDefaultRef_ByDefinitionMustInitializeExactClockOffsetSerialPosition()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -542,8 +559,8 @@ namespace ClockQuantization.Tests
             var quantizer = new ClockQuantizer(context, metronomeOptions.MaxIntervalTimeSpan);
 
             // Execute
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedTimeSerialPosition(ref position);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedClockOffsetSerialPosition(ref position);
 
             // Test
             Assert.True(position.HasValue);
@@ -552,7 +569,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedTimeSerialPosition_WithExactRef_ByDefinitionRemainsUntouched()
+        public void ClockQuantizer_EnsureInitializedClockOffsetSerialPosition_WithExactRef_ByDefinitionRemainsUntouched()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -564,8 +581,8 @@ namespace ClockQuantization.Tests
             var quantizer = new ClockQuantizer(context, metronomeOptions.MaxIntervalTimeSpan);
             var interval = quantizer.Advance();
 
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: false);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: false);
 
             Assert.True(position.HasValue);
             Assert.True(position.IsExact);
@@ -573,14 +590,14 @@ namespace ClockQuantization.Tests
             var copy = position;
 
             // Execute
-            quantizer.EnsureInitializedTimeSerialPosition(ref position);
+            quantizer.EnsureInitializedClockOffsetSerialPosition(ref position);
 
             // Test
             Assert.Equal(copy, position);
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedTimeSerialPosition_WithNonExactRef_ByDefinitionRemainsUntouched()
+        public void ClockQuantizer_EnsureInitializedClockOffsetSerialPosition_WithNonExactRef_ByDefinitionRemainsUntouched()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var now = DateTimeOffset.UtcNow;
@@ -592,8 +609,8 @@ namespace ClockQuantization.Tests
             var quantizer = new ClockQuantizer(context, metronomeOptions.MaxIntervalTimeSpan);
             var interval = quantizer.Advance();
 
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedTimeSerialPosition(ref position);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedClockOffsetSerialPosition(ref position);
 
             Assert.True(position.HasValue);
             Assert.False(position.IsExact);
@@ -601,7 +618,7 @@ namespace ClockQuantization.Tests
             var copy = position;
 
             // Execute
-            quantizer.EnsureInitializedTimeSerialPosition(ref position);
+            quantizer.EnsureInitializedClockOffsetSerialPosition(ref position);
 
             // Test
             Assert.Equal(copy, position);
@@ -627,11 +644,11 @@ namespace ClockQuantization.Tests
 
             // Test
             Assert.NotSame(interval1, interval2);
-            Assert.True(interval1.DateTimeOffset < interval2.DateTimeOffset);
+            Assert.True(interval1.ClockOffset <= interval2.ClockOffset);
 
             // Ensure interval2 was sealed (and hence a new position can by definition not be "exact")
-            var position = default(LazyTimeSerialPosition);
-            Interval.EnsureInitializedTimeSerialPosition(interval2, ref position);
+            var position = default(LazyClockOffsetSerialPosition);
+            Interval.EnsureInitializedClockOffsetSerialPosition(interval2, ref position);
             Assert.False(position.IsExact);
 
             Assert.True(isAdvancedEventRaised);
@@ -643,7 +660,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedExactTimeSerialPosition_WithoutAdvanceAndWithDefaultRef_DoesNotAdvanceCurrentInterval()
+        public void ClockQuantizer_EnsureInitializedExactClockOffsetSerialPosition_WithoutAdvanceAndWithDefaultRef_DoesNotAdvanceCurrentInterval()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var context = new SystemClockTemporalContext(() => DateTimeOffset.UtcNow, metronomeOptions);
@@ -656,18 +673,18 @@ namespace ClockQuantization.Tests
             Assert.Same(interval, quantizer.CurrentInterval);
 
             // Execute
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance:false);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: false);
 
             // Test
             Assert.True(position.HasValue);
             Assert.True(position.IsExact);
             Assert.Same(interval, quantizer.CurrentInterval);
-            Assert.True(quantizer.CurrentInterval!.DateTimeOffset < position.DateTimeOffset);
+            Assert.True(quantizer.CurrentInterval!.ClockOffset <= position.ClockOffset);
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedExactTimeSerialPosition_WithAdvanceAndWithDefaultRef_AdvancesCurrentIntervalAndRaisesEvent()
+        public void ClockQuantizer_EnsureInitializedExactClockOffsetSerialPosition_WithAdvanceAndWithDefaultRef_AdvancesCurrentIntervalAndRaisesEvent()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var context = new SystemClockTemporalContext(() => DateTimeOffset.UtcNow, metronomeOptions);
@@ -683,14 +700,14 @@ namespace ClockQuantization.Tests
             quantizer.Advanced += Quantizer_Advanced;
 
             // Execute
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: true);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: true);
 
             // Test
             Assert.True(position.HasValue);
             Assert.True(position.IsExact);
             Assert.NotSame(interval, quantizer.CurrentInterval);
-            Assert.True(quantizer.CurrentInterval!.DateTimeOffset == position.DateTimeOffset);
+            Assert.True(quantizer.CurrentInterval!.ClockOffset == position.ClockOffset);
 
             Assert.True(isAdvancedEventRaised);
 
@@ -701,7 +718,7 @@ namespace ClockQuantization.Tests
         }
 
         [Fact]
-        public void ClockQuantizer_EnsureInitializedExactTimeSerialPosition_WithAdvanceAndWithDefaultRef_DoesNotGetBrokenByInteractionInAdvancedEvent()
+        public void ClockQuantizer_EnsureInitializedExactClockOffsetSerialPosition_WithAdvanceAndWithDefaultRef_DoesNotGetBrokenByInteractionInAdvancedEvent()
         {
             var metronomeOptions = MetronomeOptions.Manual;
             var context = new SystemClockTemporalContext(() => DateTimeOffset.UtcNow, metronomeOptions);
@@ -717,16 +734,16 @@ namespace ClockQuantization.Tests
             quantizer.Advanced += Quantizer_Advanced;
 
             // Execute
-            var position = default(LazyTimeSerialPosition);
-            quantizer.EnsureInitializedExactTimeSerialPosition(ref position, advance: true);
+            var position = default(LazyClockOffsetSerialPosition);
+            quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref position, advance: true);
 
             // Test
             Assert.True(position.HasValue);
             Assert.True(position.IsExact);
             Assert.NotSame(interval, quantizer.CurrentInterval);
 
-            // quantizer.CurrentInterval advanced once more in the event handler, so we cannot validate position.DateTimeOffset against it
-            Assert.False(quantizer.CurrentInterval!.DateTimeOffset == position.DateTimeOffset);
+            // quantizer.CurrentInterval advanced once more in the event handler, so we cannot validate position.Offset against it
+            Assert.True(quantizer.CurrentInterval!.ClockOffset >= position.ClockOffset);
 
             Assert.True(isAdvancedEventRaised);
 
@@ -742,16 +759,16 @@ namespace ClockQuantization.Tests
                 Assert.NotNull(currentInterval);
                 Assert.NotSame(interval, currentInterval);
 
-                var interferingTimeSerialPosition1 = default(LazyTimeSerialPosition);
-                Interval.EnsureInitializedTimeSerialPosition(interval, ref interferingTimeSerialPosition1);
-                Assert.True(interferingTimeSerialPosition1.HasValue);
+                var interferingClockOffsetSerialPosition1 = default(LazyClockOffsetSerialPosition);
+                Interval.EnsureInitializedClockOffsetSerialPosition(interval, ref interferingClockOffsetSerialPosition1);
+                Assert.True(interferingClockOffsetSerialPosition1.HasValue);
 
-                var interferingTimeSerialPosition2 = currentInterval!.NewTimeSerialPosition();
-                Assert.True(interferingTimeSerialPosition2.HasValue);
+                var interferingClockOffsetSerialPosition2 = currentInterval!.NewClockOffsetSerialPosition();
+                Assert.True(interferingClockOffsetSerialPosition2.HasValue);
 
-                var interferingTimeSerialPosition3 = default(LazyTimeSerialPosition);
-                quantizer.EnsureInitializedExactTimeSerialPosition(ref interferingTimeSerialPosition3, advance: recurse /* let's not recurse more than once... */);
-                Assert.True(interferingTimeSerialPosition3.IsExact);
+                var interferingClockOffsetSerialPosition3 = default(LazyClockOffsetSerialPosition);
+                quantizer.EnsureInitializedExactClockOffsetSerialPosition(ref interferingClockOffsetSerialPosition3, advance: recurse /* let's not recurse more than once... */);
+                Assert.True(interferingClockOffsetSerialPosition3.IsExact);
             }
         }
     }
