@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 
 namespace ClockQuantization
 {
@@ -9,11 +10,11 @@ namespace ClockQuantization
     /// <see cref="Advance()"/> calls, as well as by <see cref="ISystemClockTemporalContext.ClockAdjusted"/> and <see cref="ISystemClockTemporalContext.MetronomeTicked"/> events.
     /// </summary>
     /// <remarks>Under certain conditions, an advance operation may be incurred by <see cref="EnsureInitializedExactClockOffsetSerialPosition(ref LazyClockOffsetSerialPosition, bool)"/> calls.</remarks>
-    public class ClockQuantizer //: IAsyncDisposable, IDisposable
+    public class ClockQuantizer : IAsyncDisposable, IDisposable
     {
         private readonly ISystemClock _clock;
         private Interval? _currentInterval;
-        private readonly System.Threading.Timer? _metronome;
+        private System.Threading.Timer? _metronome;
 
 
         #region Fields & properties
@@ -320,5 +321,59 @@ namespace ClockQuantization
         private void Context_MetronomeTicked(object? _, EventArgs __) => Advance(metronomic: true);
 
         private void Context_ClockAdjusted(object? _, EventArgs __) => Advance(metronomic: false);
+
+        #region IAsyncDisposable/IDisposable
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <inheritdoc/>
+        public async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncCore();
+
+            Dispose(disposing: false);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <inheritdoc/>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _metronome?.Dispose();
+            }
+
+            _metronome = null;
+        }
+
+        /// <inheritdoc/>
+        protected virtual async ValueTask DisposeAsyncCore()
+        {
+#if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
+            if (_metronome is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                _metronome?.Dispose();
+            }
+#else
+            if (_metronome is not null)
+            {
+                await default(ValueTask).ConfigureAwait(false);
+                _metronome.Dispose();
+            }
+#endif
+
+            _metronome = null;
+        }
+
+        #endregion
     }
 }

@@ -163,6 +163,18 @@
             the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
             </remarks>
         </member>
+        <member name="M:ClockQuantization.ClockQuantizer.Dispose">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.DisposeAsync">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.Dispose(System.Boolean)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.DisposeAsyncCore">
+            <inheritdoc/>
+        </member>
         <member name="T:ClockQuantization.Interval">
             <summary>
             Represents an interval within a <see cref="T:ClockQuantization.ClockQuantizer"/>'s temporal context.
