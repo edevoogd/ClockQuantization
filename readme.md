@@ -69,5 +69,5 @@ Local experimentation shows further advantage to using `Environment.TickCount64`
   2. Document the idea behind `ISystemClockTemporalContext`, without actually writing documentation
 
 # Remaining work
-- [ ] Implement `IDisposable` and/or `IAsyncDisposable` on `ClockQuantizer`
+- [X] Implement `IDisposable` and/or `IAsyncDisposable` on `ClockQuantizer` &rarr; [#6](https://github.com/edevoogd/ClockQuantization/pull/6)
 - [ ] Integrate this proposal in a [local fork](https://github.com/edevoogd/runtime) of Microsoft.Extensions.Caching.Memory as a PoC
