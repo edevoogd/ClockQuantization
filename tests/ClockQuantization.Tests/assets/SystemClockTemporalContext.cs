@@ -92,7 +92,7 @@ namespace ClockQuantization.Tests.Assets
             ProvidesMetronome = (_metronomeOptions = metronomeOptions) is not null;
             IsMetronomeRunning = ProvidesMetronome && ApplyMetronomeOptions(metronomeOptions!, Metronome_Ticked, out _metronome);
 
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
             var utcNow = DateTimeOffset.UtcNow;
             var milliSecondsSinceGenesis = Environment.TickCount64; // The number of milliseconds elapsed since the system started.
 
@@ -100,7 +100,7 @@ namespace ClockQuantization.Tests.Assets
 #endif
         }
 
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
         public readonly DateTimeOffset UtcGenesis;
 #endif
 
@@ -109,7 +109,7 @@ namespace ClockQuantization.Tests.Assets
         public long UtcNowClockOffset
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
             get => HasExternalClock ? Environment.TickCount64 : _manual!.UtcNowClockOffset;
 #else
             get => HasExternalClock ? UtcNow.UtcTicks : _manual!.UtcNowClockOffset;
@@ -125,7 +125,7 @@ namespace ClockQuantization.Tests.Assets
                 return _manual!.ClockOffsetToUtcDateTimeOffset(offset);
             }
 
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
             return UtcGenesis + TimeSpan.FromMilliseconds(offset);
 #else
             return new DateTimeOffset(offset, TimeSpan.Zero);
@@ -140,7 +140,7 @@ namespace ClockQuantization.Tests.Assets
                 return _manual!.DateTimeOffsetToClockOffset(offset);
             }
 
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
             return (long) (offset.UtcDateTime - UtcGenesis).TotalMilliseconds;
 #else
             return offset.UtcTicks;
@@ -156,7 +156,7 @@ namespace ClockQuantization.Tests.Assets
                     return _manual!.ClockOffsetUnitsPerMillisecond;
                 }
 
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
                 return 1;
 #else
                 return TimeSpan.TicksPerMillisecond;

@@ -26,7 +26,7 @@ namespace ClockQuantization
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ref readonly SnapshotTracker WithNextSerialPosition(ref SnapshotTracker tracker)
             {
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
                 Interlocked.Increment(ref tracker.SerialPosition);
 #else
                 Interlocked.Add(ref Unsafe.As<uint, int>(ref tracker.SerialPosition), 1);
@@ -78,7 +78,7 @@ namespace ClockQuantization
         internal Interval Seal()
         {
             // Prevent 'Exact' positions post initialization of the Interval; ensure SerialPosition > 0
-#if NET5_0
+#if NET5_0 || NET5_0_OR_GREATER
             Interlocked.CompareExchange(ref _tracker.SerialPosition, 1u, 0u);
 #else
             Interlocked.CompareExchange(ref Unsafe.As<uint, int>(ref _tracker.SerialPosition), 1, 0);
