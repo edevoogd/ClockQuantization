@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
+#if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
+using System.Diagnostics.CodeAnalysis;
+#endif
 using System.Runtime.CompilerServices;
 
 namespace ClockQuantization
@@ -32,8 +35,11 @@ namespace ClockQuantization
     {
         private static class ThrowHelper
         {
+#if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
+            [DoesNotReturn]
+#endif
             [MethodImpl(MethodImplOptions.NoInlining)]
-            public static InvalidOperationException CreateInvalidOperationException() => new InvalidOperationException();
+            internal static T ThrowInvalidOperationException<T>() => throw new InvalidOperationException();
         }
 
         private readonly struct Snapshot
@@ -54,12 +60,12 @@ namespace ClockQuantization
         /// <value>Returns the offset assigned to the current value.</value>
         /// <exception cref="InvalidOperationException">When <see cref="HasValue"/> is <see langword="false"/>.</exception>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public readonly long ClockOffset { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => HasValue ? _snapshot.ClockOffset : throw ThrowHelper.CreateInvalidOperationException(); }
+        public readonly long ClockOffset { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => HasValue ? _snapshot.ClockOffset : ThrowHelper.ThrowInvalidOperationException<long>(); }
 
         /// <value>Returns the serial position assigned to the current value.</value>
         /// <exception cref="InvalidOperationException">When <see cref="HasValue"/> is <see langword="false"/>.</exception>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public readonly uint SerialPosition { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => HasValue ? _snapshot.SerialPosition : throw ThrowHelper.CreateInvalidOperationException(); }
+        public readonly uint SerialPosition { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => HasValue ? _snapshot.SerialPosition : ThrowHelper.ThrowInvalidOperationException<uint>(); }
 
         /// <value>Returns <see langword="true"/> if a value is assigned, <see langword="false"/> otherwise.</value>
         public readonly bool HasValue { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _snapshot.SerialPosition > 0u; }
