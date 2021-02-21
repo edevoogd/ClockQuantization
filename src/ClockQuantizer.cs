@@ -354,26 +354,30 @@ namespace ClockQuantization
         /// <inheritdoc/>
         protected virtual async ValueTask DisposeAsyncCore()
         {
+            if (_metronome is null)
+            {
+                goto done;
+            }
+
 #if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
             if (_metronome is IAsyncDisposable asyncDisposable)
             {
                 await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-            }
-            else
-            {
-                _metronome?.Dispose();
+                goto finish;
             }
 #else
-            if (_metronome is not null)
-            {
-                await default(ValueTask).ConfigureAwait(false);
-                _metronome.Dispose();
-            }
+            await default(ValueTask).ConfigureAwait(false);
 #endif
+            _metronome!.Dispose();
 
+#if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
+finish:
+#endif
             _metronome = null;
+done:
+            ;
         }
 
-        #endregion
+#endregion
     }
 }
