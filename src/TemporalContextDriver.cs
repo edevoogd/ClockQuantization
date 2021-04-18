@@ -58,7 +58,7 @@ namespace ClockQuantization
         {
             starting = false;
 
-            if (_metronome is null)
+            if (_metronome is null && HasInternalMetronome)
             {
                 // Create a paused metronome timer
                 var metronome = new Timer(Metronome_TimerCallback, null, Timeout.InfiniteTimeSpan, _metronomeIntervalTimeSpan);
@@ -231,8 +231,8 @@ namespace ClockQuantization
             GC.SuppressFinalize(this);
         }
 
-        /// <inheritdoc/>
         private int _disposed;
+        /// <inheritdoc/>
         protected virtual void Dispose(bool disposing)
         {
             if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 0)
