@@ -89,16 +89,18 @@ namespace ClockQuantization
 
         private async ValueTask DisposeInternalMetronomeAsync()
         {
+#if !(NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER)
+            await default(ValueTask).ConfigureAwait(continueOnCapturedContext: false);
+#endif
+
             if (Interlocked.Exchange(ref _metronome, null) is Timer metronome)
             {
 #if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
-                if (_metronome is IAsyncDisposable asyncDisposable)
+                if (metronome is IAsyncDisposable asyncDisposable)
                 {
                     await asyncDisposable.DisposeAsync().ConfigureAwait(continueOnCapturedContext: false);
                     return;
                 }
-#else
-                await default(ValueTask).ConfigureAwait(continueOnCapturedContext: false);
 #endif
                 metronome.Dispose();
             }
@@ -164,7 +166,7 @@ namespace ClockQuantization
             }
             else
             {
-                // Hold back the latest ClockAdjusted event until we unquiesce
+                // Retain the latest ClockAdjusted event until we unquiesce
                 Interlocked.Exchange(ref _pendingClockAdjustedEventArgs, e);
             }
         }
@@ -183,9 +185,9 @@ namespace ClockQuantization
 
         private void Context_ClockAdjusted(object? _, EventArgs __) => OnClockAdjusted(EventArgs.Empty);
 
-        private void Metronome_TimerCallback(object? _) => Context_MetronomeTicked(null, EventArgs.Empty);
-
         private void Context_MetronomeTicked(object? _, EventArgs __) => OnMetronomeTicked(EventArgs.Empty);
+
+        private void Metronome_TimerCallback(object? _) => OnMetronomeTicked(EventArgs.Empty);
 
 
         #region ISystemClock
