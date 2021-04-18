@@ -229,6 +229,15 @@ namespace ClockQuantization
             _driver.MetronomeTicked += Driver_MetronomeTicked;
         }
 
+
+        // Quiescing
+        public void Quiesce() => _driver.Quiesce();
+
+        public void Unquiesce() => _driver.Unquiesce();
+
+
+        // Advance operations
+
         private struct AdvancePreparationInfo
         {
             public Interval Interval;
