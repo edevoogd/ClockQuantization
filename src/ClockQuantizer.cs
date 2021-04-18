@@ -222,10 +222,8 @@ namespace ClockQuantization
         /// </remarks>
         public ClockQuantizer(ISystemClock clock, TimeSpan maxIntervalTimeSpan)
         {
-            MaxIntervalTimeSpan = maxIntervalTimeSpan;
-
-            _driver = new ClockQuantizerDriver(clock, MaxIntervalTimeSpan);
-            _driver.ClockAdjusted += Driver_ClockAdjusted;
+            _driver = new ClockQuantizerDriver(clock, MaxIntervalTimeSpan = maxIntervalTimeSpan);
+            _driver.ClockAdjusted   += Driver_ClockAdjusted;
             _driver.MetronomeTicked += Driver_MetronomeTicked;
         }
 
@@ -236,7 +234,7 @@ namespace ClockQuantization
         public void Unquiesce() => _driver.Unquiesce();
 
 
-        // Advance operations
+        // Advance primitives
 
         private struct AdvancePreparationInfo
         {
