@@ -27,7 +27,7 @@ namespace ClockQuantization
         long ClockOffsetUnitsPerMillisecond { get; }
 
         /// <summary>
-        /// Converts <paramref name="offset"/> to a <see cref="DateTimeOffset"/> in UTC.
+        /// Converts clock-specific <paramref name="offset"/> to a <see cref="DateTimeOffset"/> in UTC.
         /// </summary>
         /// <param name="offset">The offset to convert</param>
         /// <returns>The corresponding <see cref="DateTimeOffset"/></returns>

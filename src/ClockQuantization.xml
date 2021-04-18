@@ -163,16 +163,40 @@
             the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
             </remarks>
         </member>
-        <member name="M:ClockQuantization.ClockQuantizer.Dispose">
+        <member name="P:ClockQuantization.ClockQuantizerDriver.UtcNow">
             <inheritdoc/>
         </member>
-        <member name="M:ClockQuantization.ClockQuantizer.DisposeAsync">
+        <member name="P:ClockQuantization.ClockQuantizerDriver.UtcNowClockOffset">
             <inheritdoc/>
         </member>
-        <member name="M:ClockQuantization.ClockQuantizer.Dispose(System.Boolean)">
+        <member name="P:ClockQuantization.ClockQuantizerDriver.ClockOffsetUnitsPerMillisecond">
             <inheritdoc/>
         </member>
-        <member name="M:ClockQuantization.ClockQuantizer.DisposeAsyncCore">
+        <member name="M:ClockQuantization.ClockQuantizerDriver.ClockOffsetToUtcDateTimeOffset(System.Int64)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizerDriver.DateTimeOffsetToClockOffset(System.DateTimeOffset)">
+            <inheritdoc/>
+        </member>
+        <member name="P:ClockQuantization.ClockQuantizerDriver.ProvidesMetronome">
+            <inheritdoc/>
+        </member>
+        <member name="E:ClockQuantization.ClockQuantizerDriver.ClockAdjusted">
+            <inheritdoc/>
+        </member>
+        <member name="E:ClockQuantization.ClockQuantizerDriver.MetronomeTicked">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizerDriver.Dispose">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizerDriver.DisposeAsync">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizerDriver.Dispose(System.Boolean)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizerDriver.DisposeAsyncCore">
             <inheritdoc/>
         </member>
         <member name="T:ClockQuantization.Interval">
@@ -280,7 +304,7 @@
         </member>
         <member name="M:ClockQuantization.ISystemClock.ClockOffsetToUtcDateTimeOffset(System.Int64)">
             <summary>
-            Converts <paramref name="offset"/> to a <see cref="T:System.DateTimeOffset"/> in UTC.
+            Converts clock-specific <paramref name="offset"/> to a <see cref="T:System.DateTimeOffset"/> in UTC.
             </summary>
             <param name="offset">The offset to convert</param>
             <returns>The corresponding <see cref="T:System.DateTimeOffset"/></returns>
