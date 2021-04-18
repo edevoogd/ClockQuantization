@@ -240,7 +240,6 @@ namespace ClockQuantization
             GC.SuppressFinalize(this);
         }
 
-        private int _isDisposed;
         /// <inheritdoc/>
         protected virtual void Dispose(bool disposing)
         {

@@ -316,10 +316,10 @@ namespace ClockQuantization
 
         #region IAsyncDisposable/IDisposable
 
-        private int _areHandlersDisposed;
-        private void DisposeHandlers()
+        private int _areEventHandlersDetached;
+        private void DetachEventHandlers()
         {
-            if (Interlocked.CompareExchange(ref _areHandlersDisposed, 1, 0) == 0)
+            if (Interlocked.CompareExchange(ref _areEventHandlersDetached, 1, 0) == 0)
             {
                 _driver.ClockAdjusted   -= Driver_ClockAdjusted;
                 _driver.MetronomeTicked -= Driver_MetronomeTicked;
@@ -330,7 +330,7 @@ namespace ClockQuantization
         public void Dispose()
         {
             // This method is re-entrant
-            DisposeHandlers();
+            DetachEventHandlers();
 
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
@@ -340,7 +340,7 @@ namespace ClockQuantization
         public async ValueTask DisposeAsync()
         {
             // This method is re-entrant
-            DisposeHandlers();
+            DetachEventHandlers();
 
             await DisposeAsyncCore();
 
@@ -348,30 +348,21 @@ namespace ClockQuantization
             GC.SuppressFinalize(this);
         }
 
-        private int _isDisposed;
-        private int _areDisposableMembersDisposed;
         /// <inheritdoc/>
         protected virtual void Dispose(bool disposing)
         {
-            if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) == 0)
+            if (disposing)
             {
-                if (disposing)
-                {
-                    if (Interlocked.CompareExchange(ref _areDisposableMembersDisposed, 1, 0) == 0)
-                    {
-                        _driver.Dispose();
-                    }
-                }
+                // This method is re-entrant and mutually co-existent with _driver.DisposeAsyncCore()
+                _driver.Dispose();
             }
         }
 
         /// <inheritdoc/>
         protected virtual async ValueTask DisposeAsyncCore()
         {
-            if (Interlocked.CompareExchange(ref _areDisposableMembersDisposed, 1, 0) == 0)
-            {
-                await _driver.DisposeAsync().ConfigureAwait(false);
-            }
+            // This method is re-entrant and mutually co-existent with _driver.Dispose()
+            await _driver.DisposeAsync().ConfigureAwait(false);
         }
 
         #endregion
