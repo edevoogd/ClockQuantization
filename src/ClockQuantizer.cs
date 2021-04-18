@@ -316,11 +316,21 @@ namespace ClockQuantization
 
         #region IAsyncDisposable/IDisposable
 
+        private int _areHandlersDisposed;
+        private void DisposeHandlers()
+        {
+            if (Interlocked.CompareExchange(ref _areHandlersDisposed, 1, 0) == 0)
+            {
+                _driver.ClockAdjusted   -= Driver_ClockAdjusted;
+                _driver.MetronomeTicked -= Driver_MetronomeTicked;
+            }
+        }
+
         /// <inheritdoc/>
         public void Dispose()
         {
-//            _driver.ClockAdjusted -= Driver_ClockAdjusted;
-//            _driver.MetronomeTicked -= Driver_MetronomeTicked;
+            // This method is re-entrant
+            DisposeHandlers();
 
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
@@ -329,8 +339,8 @@ namespace ClockQuantization
         /// <inheritdoc/>
         public async ValueTask DisposeAsync()
         {
-//            _driver.ClockAdjusted -= Driver_ClockAdjusted;
-//            _driver.MetronomeTicked -= Driver_MetronomeTicked;
+            // This method is re-entrant
+            DisposeHandlers();
 
             await DisposeAsyncCore();
 
@@ -338,15 +348,19 @@ namespace ClockQuantization
             GC.SuppressFinalize(this);
         }
 
-        private int _disposed;
+        private int _isDisposed;
+        private int _areDisposableMembersDisposed;
         /// <inheritdoc/>
         protected virtual void Dispose(bool disposing)
         {
-            if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 0)
+            if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) == 0)
             {
                 if (disposing)
                 {
-                    _driver.Dispose();
+                    if (Interlocked.CompareExchange(ref _areDisposableMembersDisposed, 1, 0) == 0)
+                    {
+                        _driver.Dispose();
+                    }
                 }
             }
         }
@@ -354,7 +368,10 @@ namespace ClockQuantization
         /// <inheritdoc/>
         protected virtual async ValueTask DisposeAsyncCore()
         {
-            await _driver.DisposeAsync().ConfigureAwait(false);
+            if (Interlocked.CompareExchange(ref _areDisposableMembersDisposed, 1, 0) == 0)
+            {
+                await _driver.DisposeAsync().ConfigureAwait(false);
+            }
         }
 
         #endregion

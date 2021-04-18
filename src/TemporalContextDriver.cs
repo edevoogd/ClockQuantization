@@ -25,31 +25,34 @@ namespace ClockQuantization
             {
                 IsQuiescent = false;
             }
-        }
 
-        private static void AttachExternalTemporalContext(TemporalContextDriver driver, ClockQuantization.ISystemClock clock, out bool haveExternalMetronome)
-        {
-            haveExternalMetronome = false;
-            if (clock is ISystemClockTemporalContext context)
+            static void AttachExternalTemporalContext(TemporalContextDriver driver, ClockQuantization.ISystemClock clock, out bool haveExternalMetronome)
             {
-                context.ClockAdjusted += driver.Context_ClockAdjusted;
-                if (haveExternalMetronome = context.ProvidesMetronome)
+                haveExternalMetronome = false;
+                if (clock is ISystemClockTemporalContext context)
                 {
-                    // Allow external "pulse" on metronome ticks
-                    context.MetronomeTicked += driver.Context_MetronomeTicked;
+                    context.ClockAdjusted += driver.Context_ClockAdjusted;
+                    if (haveExternalMetronome = context.ProvidesMetronome)
+                    {
+                        // Allow external "pulse" on metronome ticks
+                        context.MetronomeTicked += driver.Context_MetronomeTicked;
+                    }
                 }
             }
         }
 
-        private static void DetachExternalTemporalContext(TemporalContextDriver driver, ClockQuantization.ISystemClock clock)
+        private int _isExternalTemporalContextDetached;
+        private void DetachExternalTemporalContext()
         {
-            if (clock is ISystemClockTemporalContext context)
+            if (Interlocked.CompareExchange(ref _isExternalTemporalContextDetached, 1, 0) == 0)
             {
-                context.ClockAdjusted -= driver.Context_ClockAdjusted;
-                if (context.ProvidesMetronome)
+                if (_clock is ISystemClockTemporalContext context)
                 {
-                    // Allow external "pulse" on metronome ticks
-                    context.MetronomeTicked -= driver.Context_MetronomeTicked;
+                    context.ClockAdjusted -= Context_ClockAdjusted;
+                    if (context.ProvidesMetronome)
+                    {
+                        context.MetronomeTicked -= Context_MetronomeTicked;
+                    }
                 }
             }
         }
@@ -218,6 +221,9 @@ namespace ClockQuantization
         /// <inheritdoc/>
         public void Dispose()
         {
+            // This method is re-entrant
+            DetachExternalTemporalContext();
+
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
@@ -225,30 +231,30 @@ namespace ClockQuantization
         /// <inheritdoc/>
         public async ValueTask DisposeAsync()
         {
+            // This method is re-entrant
+            DetachExternalTemporalContext();
+
             await DisposeAsyncCore();
 
             Dispose(disposing: false);
             GC.SuppressFinalize(this);
         }
 
-        private int _disposed;
+        private int _isDisposed;
         /// <inheritdoc/>
         protected virtual void Dispose(bool disposing)
         {
-            if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 0)
+            if (disposing)
             {
-                if (disposing)
-                {
-                    DisposeInternalMetronome();
-                }
-
-                DetachExternalTemporalContext(this, _clock);
+                // This method is re-entrant
+                DisposeInternalMetronome();
             }
         }
 
         /// <inheritdoc/>
         protected virtual async ValueTask DisposeAsyncCore()
         {
+            // This method is re-entrant
             await DisposeInternalMetronomeAsync();
         }
 
