@@ -218,7 +218,7 @@ namespace ClockQuantization
         /// <param name="maxIntervalTimeSpan">The maximum <see cref="TimeSpan"/> of each <see cref="Interval"/></param>
         /// <remarks>
         /// If <paramref name="clock"/> also implements <see cref="ISystemClockTemporalContext"/>, the <see cref="ClockQuantizer"/> will pick up on external
-        /// <see cref="ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="ISystemClockTemporalContext.ProvidesMetronome"/> is <see langword="true"/>,
+        /// <see cref="ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="ISystemClockTemporalContext.MetronomeIntervalTimeSpan"/> is non-null,
         /// the <see cref="ClockQuantizer"/> will pick up on external <see cref="ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
         /// </remarks>
         public ClockQuantizer(ISystemClock clock, TimeSpan maxIntervalTimeSpan)
@@ -260,12 +260,11 @@ namespace ClockQuantization
 
         private AdvancePreparationInfo PrepareAdvance(bool metronomic)
         {
-            bool starting = false;
-
             // Start metronome (if not imposed externally) on first Advance and consider first Advance as a metronomic event.
-            if (_currentInterval is null && _driver.TryEnsureMetronomeRunning(out starting))
+            bool unquiescing = _driver.Unquiesce(out var metronomeStarting);
+            if (_currentInterval is null)
             {
-                metronomic |= starting;
+                metronomic |= metronomeStarting;
             }
 
             var previousInterval = _currentInterval;
@@ -274,7 +273,7 @@ namespace ClockQuantization
             if (previousInterval is not null)
             {
                 // Ignore potential *internal* metronome gap due to tiny clock jitter
-                if (!metronomic || (metronomic && (starting || !_driver.HasInternalMetronome)))
+                if (!metronomic || (metronomic && (unquiescing || !_driver.HasInternalMetronome)))
                 {
                     var gap = ClockOffsetUnitsToTimeSpan(interval.ClockOffset - previousInterval.ClockOffset) - MaxIntervalTimeSpan;
                     if (gap > TimeSpan.Zero)

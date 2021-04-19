@@ -47,7 +47,7 @@ namespace ClockQuantization.Tests.Assets
         private System.Threading.Timer? _metronome;
         private MetronomeOptions? _metronomeOptions;
 
-        public bool ProvidesMetronome { get; private set; }
+        public TimeSpan? MetronomeIntervalTimeSpan { get; private set; } = default;
         public bool IsMetronomeRunning { get; private set; }
 
         public event EventHandler? ClockAdjusted;
@@ -89,8 +89,12 @@ namespace ClockQuantization.Tests.Assets
         public SystemClockTemporalContext(Func<DateTimeOffset> getUtcNow, MetronomeOptions? metronomeOptions)
         {
             GetUtcNow = getUtcNow;
-            ProvidesMetronome = (_metronomeOptions = metronomeOptions) is not null;
-            IsMetronomeRunning = ProvidesMetronome && ApplyMetronomeOptions(metronomeOptions!, Metronome_Ticked, out _metronome);
+            if ((_metronomeOptions = metronomeOptions) is not null)
+            {
+                MetronomeIntervalTimeSpan = metronomeOptions!.MaxIntervalTimeSpan;
+            }
+
+            IsMetronomeRunning = MetronomeIntervalTimeSpan.HasValue && ApplyMetronomeOptions(metronomeOptions!, Metronome_Ticked, out _metronome);
 
 #if NET5_0 || NET5_0_OR_GREATER
             var utcNow = DateTimeOffset.UtcNow;

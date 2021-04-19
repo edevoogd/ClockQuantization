@@ -14,26 +14,39 @@ namespace ClockQuantization
         private System.Threading.Timer? _metronome;
         private EventArgs? _pendingClockAdjustedEventArgs;
 
-        public TemporalContextDriver(ClockQuantization.ISystemClock clock, TimeSpan metronomeIntervalTimeSpan)
+        public TemporalContextDriver(ClockQuantization.ISystemClock clock, TimeSpan? metronomeIntervalTimeSpan = default)
         {
-            _clock = clock;
-            _metronomeIntervalTimeSpan = metronomeIntervalTimeSpan;
+            AttachExternalTemporalContext(this, clock, out var externalMetronomeIntervalTimeSpan);
 
-            AttachExternalTemporalContext(this, clock, out var haveExternalMetronome);
-
-            if (haveExternalMetronome)
+            if (externalMetronomeIntervalTimeSpan.HasValue)
             {
                 IsQuiescent = false;
+                _metronomeIntervalTimeSpan = externalMetronomeIntervalTimeSpan.Value;
+            }
+            else
+            {
+                if (!metronomeIntervalTimeSpan.HasValue)
+                {
+                    // Need metronome interval timespan
+                    DetachExternalTemporalContext();
+                    throw new ArgumentNullException(nameof(metronomeIntervalTimeSpan), "Must provide a valid metronome interval timespan or supply an external metronome.");
+                }
+
+                _metronomeIntervalTimeSpan = metronomeIntervalTimeSpan.Value;
             }
 
-            static void AttachExternalTemporalContext(TemporalContextDriver driver, ClockQuantization.ISystemClock clock, out bool haveExternalMetronome)
+            _clock = clock;
+
+            static void AttachExternalTemporalContext(TemporalContextDriver driver, ClockQuantization.ISystemClock clock, out TimeSpan? externalMetronomeIntervalTimeSpan)
             {
-                haveExternalMetronome = false;
+                externalMetronomeIntervalTimeSpan = default;
+
                 if (clock is ISystemClockTemporalContext context)
                 {
                     context.ClockAdjusted += driver.Context_ClockAdjusted;
-                    if (haveExternalMetronome = context.ProvidesMetronome)
+                    if (context.MetronomeIntervalTimeSpan.HasValue)
                     {
+                        externalMetronomeIntervalTimeSpan = context.MetronomeIntervalTimeSpan.Value;
                         // Allow external "pulse" on metronome ticks
                         context.MetronomeTicked += driver.Context_MetronomeTicked;
                     }
@@ -49,7 +62,7 @@ namespace ClockQuantization
                 if (_clock is ISystemClockTemporalContext context)
                 {
                     context.ClockAdjusted -= Context_ClockAdjusted;
-                    if (context.ProvidesMetronome)
+                    if (context.MetronomeIntervalTimeSpan.HasValue)
                     {
                         context.MetronomeTicked -= Context_MetronomeTicked;
                     }
@@ -57,19 +70,19 @@ namespace ClockQuantization
             }
         }
 
-        private void EnsureInternalMetronome(out bool starting)
+        private void EnsureInternalMetronome(out bool metronomeStarting)
         {
-            starting = false;
+            metronomeStarting = false;
 
             if (_metronome is null && HasInternalMetronome)
             {
                 // Create a paused metronome timer
                 var metronome = new Timer(Metronome_TimerCallback, null, Timeout.InfiniteTimeSpan, _metronomeIntervalTimeSpan);
+                metronomeStarting = true;
                 if (Interlocked.CompareExchange(ref _metronome, metronome, null) is null)
                 {
                     // Resume the newly created metronome timer
-                    _metronome!.Change(_metronomeIntervalTimeSpan, _metronomeIntervalTimeSpan);
-                    starting = true;
+                    metronome.Change(_metronomeIntervalTimeSpan, _metronomeIntervalTimeSpan);
                 }
                 else
                 {
@@ -106,18 +119,7 @@ namespace ClockQuantization
             }
         }
 
-        public bool TryEnsureMetronomeRunning(out bool starting)
-        {
-            starting = false;
-            if (HasInternalMetronome)
-            {
-                Unquiesce(out starting);
-            }
-
-            return true;
-        }
-
-        protected bool IsQuiescent { get; private set; } = true;
+        public bool IsQuiescent { get; private set; } = true;
 
         public void Quiesce()
         {
@@ -127,35 +129,37 @@ namespace ClockQuantization
             DisposeInternalMetronome();
         }
 
-        public void Unquiesce() => Unquiesce(out var _);
+        public bool Unquiesce() => Unquiesce(out var _);
 
-        private void Unquiesce(out bool starting)
+        public bool Unquiesce(out bool metronomeStarting)
         {
-            starting = false;
-            EventArgs? pendingClockAdjustedEventArgs = Interlocked.Exchange(ref _pendingClockAdjustedEventArgs, null);
+            bool unquiescing = IsQuiescent;
 
-            if (pendingClockAdjustedEventArgs is not null)
+            if (unquiescing)
             {
-                // Make sure that we briefly postpone any metronome event that may occur during the process of unquiescing
-                lock (this)
+                EventArgs? pendingClockAdjustedEventArgs = Interlocked.Exchange(ref _pendingClockAdjustedEventArgs, null);
+
+                if (pendingClockAdjustedEventArgs is not null)
                 {
-                    IsQuiescent = false;    // Set to false already to make sure that the ClockAdjusted event fires
-                    OnClockAdjusted(pendingClockAdjustedEventArgs);
+                    // Make sure that we briefly postpone any metronome event that may occur during the process of unquiescing
+                    lock (this)
+                    {
+                        IsQuiescent = false;    // Set to false already to make sure that the ClockAdjusted event fires
+                        OnClockAdjusted(pendingClockAdjustedEventArgs);
+                    }
                 }
+
+                IsQuiescent = false;
             }
 
-            IsQuiescent = false;
-            // TODO: Restore internal metronome, re-acquire unmanaged timer resources
-            if (HasInternalMetronome)
-            {
-                // Create a ** suspended ?? ** timer. Timer will be started at first call to Advance().
-                EnsureInternalMetronome(out starting);
-            }
+            EnsureInternalMetronome(out metronomeStarting);
+
+            return unquiescing;
         }
 
         public bool HasInternalMetronome
         {
-            get => _clock is not ISystemClockTemporalContext context || !context.ProvidesMetronome;
+            get => _clock is not ISystemClockTemporalContext context || !context.MetronomeIntervalTimeSpan.HasValue;
         }
 
         protected virtual void OnClockAdjusted(EventArgs e)
@@ -210,7 +214,7 @@ namespace ClockQuantization
         #region ISystemClockTemporalContext
 
         /// <inheritdoc/>
-        public bool ProvidesMetronome { get; } = true;
+        public TimeSpan? MetronomeIntervalTimeSpan { get => _metronomeIntervalTimeSpan; }
         /// <inheritdoc/>
         public event EventHandler? ClockAdjusted;
         /// <inheritdoc/>
