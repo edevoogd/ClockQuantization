@@ -70,15 +70,17 @@ namespace ClockQuantization
             }
         }
 
-        private void EnsureInternalMetronome(out bool metronomeStarting)
+        public bool HasInternalMetronome
         {
-            metronomeStarting = false;
+            get => _clock is not ISystemClockTemporalContext context || !context.MetronomeIntervalTimeSpan.HasValue;
+        }
 
+        private void EnsureInternalMetronome()
+        {
             if (_metronome is null && HasInternalMetronome)
             {
                 // Create a paused metronome timer
                 var metronome = new Timer(Metronome_TimerCallback, null, Timeout.InfiniteTimeSpan, _metronomeIntervalTimeSpan);
-                metronomeStarting = true;
                 if (Interlocked.CompareExchange(ref _metronome, metronome, null) is null)
                 {
                     // Resume the newly created metronome timer
@@ -129,9 +131,8 @@ namespace ClockQuantization
             DisposeInternalMetronome();
         }
 
-        public bool Unquiesce() => Unquiesce(out var _);
-
-        public bool Unquiesce(out bool metronomeStarting)
+        private readonly object _quiescingLockObject = new object();
+        public bool Unquiesce()
         {
             bool unquiescing = IsQuiescent;
 
@@ -142,7 +143,7 @@ namespace ClockQuantization
                 if (pendingClockAdjustedEventArgs is not null)
                 {
                     // Make sure that we briefly postpone any metronome event that may occur during the process of unquiescing
-                    lock (this)
+                    lock (_quiescingLockObject)
                     {
                         IsQuiescent = false;    // Set to false already to make sure that the ClockAdjusted event fires
                         OnClockAdjusted(pendingClockAdjustedEventArgs);
@@ -152,14 +153,22 @@ namespace ClockQuantization
                 IsQuiescent = false;
             }
 
-            EnsureInternalMetronome(out metronomeStarting);
+            // Ensure that we have an internal metronome, if applicable.
+            EnsureInternalMetronome();
 
             return unquiescing;
         }
 
-        public bool HasInternalMetronome
+        protected virtual void OnMetronomeTicked(EventArgs e)
         {
-            get => _clock is not ISystemClockTemporalContext context || !context.MetronomeIntervalTimeSpan.HasValue;
+            if (!IsQuiescent)
+            {
+                // Make sure that we briefly postpone a metronome event that occurs during the process of unquiescing
+                lock (_quiescingLockObject)
+                {
+                    MetronomeTicked?.Invoke(this, e);
+                }
+            }
         }
 
         protected virtual void OnClockAdjusted(EventArgs e)
@@ -172,18 +181,6 @@ namespace ClockQuantization
             {
                 // Retain the latest ClockAdjusted event until we unquiesce
                 Interlocked.Exchange(ref _pendingClockAdjustedEventArgs, e);
-            }
-        }
-
-        protected virtual void OnMetronomeTicked(EventArgs e)
-        {
-            if (!IsQuiescent)
-            {
-                // Make sure that we briefly postpone a metronome event that occurs during the process of unquiescing
-                lock (this)
-                {
-                    MetronomeTicked?.Invoke(this, e);
-                }
             }
         }
 
@@ -227,6 +224,8 @@ namespace ClockQuantization
         /// <inheritdoc/>
         public void Dispose()
         {
+            IsQuiescent = true;
+
             // This method is re-entrant
             DetachExternalTemporalContext();
 
@@ -237,6 +236,8 @@ namespace ClockQuantization
         /// <inheritdoc/>
         public async ValueTask DisposeAsync()
         {
+            IsQuiescent = true;
+
             // This method is re-entrant
             DetachExternalTemporalContext();
 

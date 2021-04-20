@@ -230,9 +230,24 @@ namespace ClockQuantization
 
 
         // Quiescing
+
+        /// <summary>
+        /// Puts the <see cref="ClockQuantizer"/> into a quiescent state, effectively freeing any <em>owned</em> unmanaged resources. While in a quiescent state, the <see cref="ClockQuantizer"/> will not raise any events, nor perform metronomic advance operations.
+        /// </summary>
+        /// <remarks>
+        /// Any externally initiated advance operation will automatically take the <see cref="ClockQuantizer"/> back into normal operation.
+        /// </remarks>
         public void Quiesce() => _driver.Quiesce();
 
+        /// <summary>
+        /// Takes the <see cref="ClockQuantizer"/> out of a quiescent state into normal operation.
+        /// </summary>
         public void Unquiesce() => _driver.Unquiesce();
+
+        /// <value>
+        /// Returns <see langword="true"/> if the <see cref="ClockQuantizer"/> is in a quiescent state, <see langword="false"/> otherwise.
+        /// </value>
+        public bool IsQuiescent { get => _driver.IsQuiescent; }
 
 
         // Advance primitives
@@ -261,10 +276,10 @@ namespace ClockQuantization
         private AdvancePreparationInfo PrepareAdvance(bool metronomic)
         {
             // Start metronome (if not imposed externally) on first Advance and consider first Advance as a metronomic event.
-            bool unquiescing = _driver.Unquiesce(out var metronomeStarting);
-            if (_currentInterval is null)
+            bool unquiescing = _driver.Unquiesce();
+            if (unquiescing || _currentInterval is null)
             {
-                metronomic |= metronomeStarting;
+                metronomic = true;
             }
 
             var previousInterval = _currentInterval;
@@ -273,7 +288,7 @@ namespace ClockQuantization
             if (previousInterval is not null)
             {
                 // Ignore potential *internal* metronome gap due to tiny clock jitter
-                if (!metronomic || (metronomic && (unquiescing || !_driver.HasInternalMetronome)))
+                if (unquiescing || !metronomic || (metronomic && !_driver.HasInternalMetronome))
                 {
                     var gap = ClockOffsetUnitsToTimeSpan(interval.ClockOffset - previousInterval.ClockOffset) - MaxIntervalTimeSpan;
                     if (gap > TimeSpan.Zero)
