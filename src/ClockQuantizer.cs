@@ -218,7 +218,7 @@ namespace ClockQuantization
         /// <param name="maxIntervalTimeSpan">The maximum <see cref="TimeSpan"/> of each <see cref="Interval"/></param>
         /// <remarks>
         /// If <paramref name="clock"/> also implements <see cref="ISystemClockTemporalContext"/>, the <see cref="ClockQuantizer"/> will pick up on external
-        /// <see cref="ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="ISystemClockTemporalContext.MetronomeIntervalTimeSpan"/> is non-null,
+        /// <see cref="ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="ISystemClockTemporalContext.MetronomeIntervalTimeSpan"/> is non-<see langword="null"/>,
         /// the <see cref="ClockQuantizer"/> will pick up on external <see cref="ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
         /// </remarks>
         public ClockQuantizer(ISystemClock clock, TimeSpan maxIntervalTimeSpan)
@@ -231,13 +231,22 @@ namespace ClockQuantization
 
         // Quiescing
 
+        private readonly object _quiescingLockObject = new object();
+
         /// <summary>
         /// Puts the <see cref="ClockQuantizer"/> into a quiescent state, effectively freeing any <em>owned</em> unmanaged resources. While in a quiescent state, the <see cref="ClockQuantizer"/> will not raise any events, nor perform metronomic advance operations.
         /// </summary>
         /// <remarks>
         /// Any externally initiated advance operation will automatically take the <see cref="ClockQuantizer"/> back into normal operation.
         /// </remarks>
-        public void Quiesce() => _driver.Quiesce();
+        public void Quiesce()
+        {
+            // Ensure that quiesent state can be achieved without immediately being knocked out of it by a MetronomeTicked event that just happened to be in flight.
+            lock (_quiescingLockObject)
+            {
+                _driver.Quiesce();
+            }
+        }
 
         /// <summary>
         /// Takes the <see cref="ClockQuantizer"/> out of a quiescent state into normal operation.
@@ -323,9 +332,23 @@ namespace ClockQuantization
             return preparation.Interval;
         }
 
-        private void Driver_MetronomeTicked(object? _, EventArgs __) => Advance(metronomic: true);
+        private void Driver_MetronomeTicked(object? _, EventArgs __)
+        {
+            lock (_quiescingLockObject)
+            {
+                // Ensure that any in-flight MetronomeTicked event during quiescing transition does not knock us out of a quiesent state that was juuuuuuust established.
+                if (!IsQuiescent)
+                {
+                    Advance(metronomic: true);
+                }
+            }
+        }
 
-        private void Driver_ClockAdjusted(object? _, EventArgs __) => Advance(metronomic: false);
+        private void Driver_ClockAdjusted(object? _, EventArgs __)
+        {
+            // Allow clock adjustemts to take us out of quiesent state (race possible; small chance of in-flight event, as underlying driver is quisced as well).
+            Advance(metronomic: false);
+        }
 
 
         #region IAsyncDisposable/IDisposable

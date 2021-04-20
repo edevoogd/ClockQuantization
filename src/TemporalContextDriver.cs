@@ -131,7 +131,7 @@ namespace ClockQuantization
             DisposeInternalMetronome();
         }
 
-        private readonly object _quiescingLockObject = new object();
+        private readonly object _unquiescingLockObject = new object();
         public bool Unquiesce()
         {
             bool unquiescing = IsQuiescent;
@@ -143,7 +143,7 @@ namespace ClockQuantization
                 if (pendingClockAdjustedEventArgs is not null)
                 {
                     // Make sure that we briefly postpone any metronome event that may occur during the process of unquiescing
-                    lock (_quiescingLockObject)
+                    lock (_unquiescingLockObject)
                     {
                         IsQuiescent = false;    // Set to false already to make sure that the ClockAdjusted event fires
                         OnClockAdjusted(pendingClockAdjustedEventArgs);
@@ -164,7 +164,7 @@ namespace ClockQuantization
             if (!IsQuiescent)
             {
                 // Make sure that we briefly postpone a metronome event that occurs during the process of unquiescing
-                lock (_quiescingLockObject)
+                lock (_unquiescingLockObject)
                 {
                     MetronomeTicked?.Invoke(this, e);
                 }

@@ -159,7 +159,7 @@
             <param name="maxIntervalTimeSpan">The maximum <see cref="T:System.TimeSpan"/> of each <see cref="T:ClockQuantization.Interval"/></param>
             <remarks>
             If <paramref name="clock"/> also implements <see cref="T:ClockQuantization.ISystemClockTemporalContext"/>, the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external
-            <see cref="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="P:ClockQuantization.ISystemClockTemporalContext.MetronomeIntervalTimeSpan"/> is non-null,
+            <see cref="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="P:ClockQuantization.ISystemClockTemporalContext.MetronomeIntervalTimeSpan"/> is non-<see langword="null"/>,
             the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
             </remarks>
         </member>
