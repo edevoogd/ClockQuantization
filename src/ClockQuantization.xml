@@ -159,9 +159,27 @@
             <param name="maxIntervalTimeSpan">The maximum <see cref="T:System.TimeSpan"/> of each <see cref="T:ClockQuantization.Interval"/></param>
             <remarks>
             If <paramref name="clock"/> also implements <see cref="T:ClockQuantization.ISystemClockTemporalContext"/>, the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external
-            <see cref="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="P:ClockQuantization.ISystemClockTemporalContext.ProvidesMetronome"/> is <see langword="true"/>,
+            <see cref="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="P:ClockQuantization.ISystemClockTemporalContext.MetronomeIntervalTimeSpan"/> is non-<see langword="null"/>,
             the <see cref="T:ClockQuantization.ClockQuantizer"/> will pick up on external <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
             </remarks>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.Quiesce">
+            <summary>
+            Puts the <see cref="T:ClockQuantization.ClockQuantizer"/> into a quiescent state, effectively freeing any <em>owned</em> unmanaged resources. While in a quiescent state, the <see cref="T:ClockQuantization.ClockQuantizer"/> will not raise any events, nor perform metronomic advance operations.
+            </summary>
+            <remarks>
+            Any externally initiated advance operation will automatically take the <see cref="T:ClockQuantization.ClockQuantizer"/> back into normal operation.
+            </remarks>
+        </member>
+        <member name="M:ClockQuantization.ClockQuantizer.Unquiesce">
+            <summary>
+            Takes the <see cref="T:ClockQuantization.ClockQuantizer"/> out of a quiescent state into normal operation.
+            </summary>
+        </member>
+        <member name="P:ClockQuantization.ClockQuantizer.IsQuiescent">
+            <value>
+            Returns <see langword="true"/> if the <see cref="T:ClockQuantization.ClockQuantizer"/> is in a quiescent state, <see langword="false"/> otherwise.
+            </value>
         </member>
         <member name="M:ClockQuantization.ClockQuantizer.Dispose">
             <inheritdoc/>
@@ -280,7 +298,7 @@
         </member>
         <member name="M:ClockQuantization.ISystemClock.ClockOffsetToUtcDateTimeOffset(System.Int64)">
             <summary>
-            Converts <paramref name="offset"/> to a <see cref="T:System.DateTimeOffset"/> in UTC.
+            Converts clock-specific <paramref name="offset"/> to a <see cref="T:System.DateTimeOffset"/> in UTC.
             </summary>
             <param name="offset">The offset to convert</param>
             <returns>The corresponding <see cref="T:System.DateTimeOffset"/></returns>
@@ -297,9 +315,9 @@
             Represents traits of the temporal context
             </summary>
         </member>
-        <member name="P:ClockQuantization.ISystemClockTemporalContext.ProvidesMetronome">
+        <member name="P:ClockQuantization.ISystemClockTemporalContext.MetronomeIntervalTimeSpan">
             <value>
-            <see langword="true"/> if the temporal context provides a metronome feature - i.e., if it fires <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events.
+            A non-<see langword="null"/> value if the temporal context provides a metronome feature - i.e., if it fires <see cref="E:ClockQuantization.ISystemClockTemporalContext.MetronomeTicked"/> events.
             </value>
         </member>
         <member name="E:ClockQuantization.ISystemClockTemporalContext.ClockAdjusted">
@@ -314,6 +332,42 @@
             <summary>
             An event that can be raised to inform listeners that a metronome "tick" occurred.
             </summary>
+        </member>
+        <member name="P:ClockQuantization.TemporalContextDriver.UtcNow">
+            <inheritdoc/>
+        </member>
+        <member name="P:ClockQuantization.TemporalContextDriver.UtcNowClockOffset">
+            <inheritdoc/>
+        </member>
+        <member name="P:ClockQuantization.TemporalContextDriver.ClockOffsetUnitsPerMillisecond">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.TemporalContextDriver.ClockOffsetToUtcDateTimeOffset(System.Int64)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.TemporalContextDriver.DateTimeOffsetToClockOffset(System.DateTimeOffset)">
+            <inheritdoc/>
+        </member>
+        <member name="P:ClockQuantization.TemporalContextDriver.MetronomeIntervalTimeSpan">
+            <inheritdoc/>
+        </member>
+        <member name="E:ClockQuantization.TemporalContextDriver.ClockAdjusted">
+            <inheritdoc/>
+        </member>
+        <member name="E:ClockQuantization.TemporalContextDriver.MetronomeTicked">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.TemporalContextDriver.Dispose">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.TemporalContextDriver.DisposeAsync">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.TemporalContextDriver.Dispose(System.Boolean)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ClockQuantization.TemporalContextDriver.DisposeAsyncCore">
+            <inheritdoc/>
         </member>
     </members>
 </doc>

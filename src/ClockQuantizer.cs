@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ClockQuantization
@@ -12,9 +13,8 @@ namespace ClockQuantization
     /// <remarks>Under certain conditions, an advance operation may be incurred by <see cref="EnsureInitializedExactClockOffsetSerialPosition(ref LazyClockOffsetSerialPosition, bool)"/> calls.</remarks>
     public class ClockQuantizer : IAsyncDisposable, IDisposable
     {
-        private readonly ISystemClock _clock;
+        private readonly TemporalContextDriver _driver;
         private Interval? _currentInterval;
-        private System.Threading.Timer? _metronome;
 
 
         #region Fields & properties
@@ -41,10 +41,10 @@ namespace ClockQuantization
 
         /// <value>Returns the <see cref="ISystemClock.UtcNow"/> value of the reference clock.</value>
         /// <remarks>Depending on the actual reference clock implementation, this may or may not incur an expensive system call.</remarks>
-        public DateTimeOffset UtcNow { get => _clock.UtcNow; }
+        public DateTimeOffset UtcNow { get => _driver.UtcNow; }
 
         /// <value>Returns the <see cref="ISystemClock.UtcNowClockOffset"/> value of the reference clock.</value>
-        public long UtcNowClockOffset { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _clock.UtcNowClockOffset; }
+        public long UtcNowClockOffset { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _driver.UtcNowClockOffset; }
 
         #endregion
 
@@ -57,7 +57,7 @@ namespace ClockQuantization
         /// <param name="offset">The <see cref="DateTimeOffset"/> to convert</param>
         /// <returns>An offset in clock-specific units.</returns>
         /// <seealso cref="ISystemClock.ClockOffsetUnitsPerMillisecond"/>
-        public long DateTimeOffsetToClockOffset(DateTimeOffset offset) => _clock.DateTimeOffsetToClockOffset(offset);
+        public long DateTimeOffsetToClockOffset(DateTimeOffset offset) => _driver.DateTimeOffsetToClockOffset(offset);
 
         /// <summary>
         /// Converts an offset in clock-specific units (ticks) to a <see cref="DateTimeOffset"/>.
@@ -66,7 +66,7 @@ namespace ClockQuantization
         /// <returns>A <see cref="DateTimeOffset"/> in UTC.</returns>
         /// <seealso cref="ISystemClock.ClockOffsetUnitsPerMillisecond"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public DateTimeOffset ClockOffsetToUtcDateTimeOffset(long offset) => _clock.ClockOffsetToUtcDateTimeOffset(offset);
+        public DateTimeOffset ClockOffsetToUtcDateTimeOffset(long offset) => _driver.ClockOffsetToUtcDateTimeOffset(offset);
 
         /// <summary>
         /// Converts a <see cref="TimeSpan"/> to a count of clock-specific offset units (ticks).
@@ -74,14 +74,14 @@ namespace ClockQuantization
         /// <param name="timeSpan">The <see cref="TimeSpan"/> to convert</param>
         /// <returns>The amount of clock-specific offset units covering the <see cref="TimeSpan"/>.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long TimeSpanToClockOffsetUnits(TimeSpan timeSpan) => (long)(timeSpan.TotalMilliseconds * _clock.ClockOffsetUnitsPerMillisecond);
+        public long TimeSpanToClockOffsetUnits(TimeSpan timeSpan) => (long)(timeSpan.TotalMilliseconds * _driver.ClockOffsetUnitsPerMillisecond);
 
         /// <summary>
         /// Converts an amount of clock-specific offset units (ticks) to a <see cref="TimeSpan"/>.
         /// </summary>
         /// <param name="units">The amount of units to convert</param>
         /// <returns>A <see cref="TimeSpan"/> covering the specified number of <paramref name="units"/>.</returns>
-        public TimeSpan ClockOffsetUnitsToTimeSpan(long units) => TimeSpan.FromMilliseconds((double)units / _clock.ClockOffsetUnitsPerMillisecond);
+        public TimeSpan ClockOffsetUnitsToTimeSpan(long units) => TimeSpan.FromMilliseconds((double)units / _driver.ClockOffsetUnitsPerMillisecond);
 
         #endregion
 
@@ -218,32 +218,48 @@ namespace ClockQuantization
         /// <param name="maxIntervalTimeSpan">The maximum <see cref="TimeSpan"/> of each <see cref="Interval"/></param>
         /// <remarks>
         /// If <paramref name="clock"/> also implements <see cref="ISystemClockTemporalContext"/>, the <see cref="ClockQuantizer"/> will pick up on external
-        /// <see cref="ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="ISystemClockTemporalContext.ProvidesMetronome"/> is <see langword="true"/>,
+        /// <see cref="ISystemClockTemporalContext.ClockAdjusted"/> events. Also, if <see cref="ISystemClockTemporalContext.MetronomeIntervalTimeSpan"/> is non-<see langword="null"/>,
         /// the <see cref="ClockQuantizer"/> will pick up on external <see cref="ISystemClockTemporalContext.MetronomeTicked"/> events, instead of relying on an internal metronome.
         /// </remarks>
         public ClockQuantizer(ISystemClock clock, TimeSpan maxIntervalTimeSpan)
         {
-            _clock = clock;
-            MaxIntervalTimeSpan = maxIntervalTimeSpan;
-            bool metronomic = true;
+            _driver = new TemporalContextDriver(clock, MaxIntervalTimeSpan = maxIntervalTimeSpan);
+            _driver.ClockAdjusted   += Driver_ClockAdjusted;
+            _driver.MetronomeTicked += Driver_MetronomeTicked;
+        }
 
-            if (clock is ISystemClockTemporalContext context)
-            {
-                context.ClockAdjusted += Context_ClockAdjusted;
-                if (context.ProvidesMetronome)
-                {
-                    // Allow external "pulse" on metronome ticks
-                    context.MetronomeTicked += Context_MetronomeTicked;
-                    metronomic = false;
-                }
-            }
 
-            if (metronomic)
+        // Quiescing
+
+        private readonly object _quiescingLockObject = new object();
+
+        /// <summary>
+        /// Puts the <see cref="ClockQuantizer"/> into a quiescent state, effectively freeing any <em>owned</em> unmanaged resources. While in a quiescent state, the <see cref="ClockQuantizer"/> will not raise any events, nor perform metronomic advance operations.
+        /// </summary>
+        /// <remarks>
+        /// Any externally initiated advance operation will automatically take the <see cref="ClockQuantizer"/> back into normal operation.
+        /// </remarks>
+        public void Quiesce()
+        {
+            // Ensure that quiesent state can be achieved without immediately being knocked out of it by a MetronomeTicked event that just happened to be in flight.
+            lock (_quiescingLockObject)
             {
-                // Create a suspended timer. Timer will be started at first call to Advance().
-                _metronome = new System.Threading.Timer(Metronome_TimerCallback, null, System.Threading.Timeout.InfiniteTimeSpan, maxIntervalTimeSpan);
+                _driver.Quiesce();
             }
         }
+
+        /// <summary>
+        /// Takes the <see cref="ClockQuantizer"/> out of a quiescent state into normal operation.
+        /// </summary>
+        public void Unquiesce() => _driver.Unquiesce();
+
+        /// <value>
+        /// Returns <see langword="true"/> if the <see cref="ClockQuantizer"/> is in a quiescent state, <see langword="false"/> otherwise.
+        /// </value>
+        public bool IsQuiescent { get => _driver.IsQuiescent; }
+
+
+        // Advance primitives
 
         private struct AdvancePreparationInfo
         {
@@ -269,10 +285,10 @@ namespace ClockQuantization
         private AdvancePreparationInfo PrepareAdvance(bool metronomic)
         {
             // Start metronome (if not imposed externally) on first Advance and consider first Advance as a metronomic event.
-            if (_currentInterval is null && _metronome is not null)
+            bool unquiescing = _driver.Unquiesce();
+            if (unquiescing || _currentInterval is null)
             {
                 metronomic = true;
-                _metronome.Change(MaxIntervalTimeSpan, MaxIntervalTimeSpan);
             }
 
             var previousInterval = _currentInterval;
@@ -281,7 +297,7 @@ namespace ClockQuantization
             if (previousInterval is not null)
             {
                 // Ignore potential *internal* metronome gap due to tiny clock jitter
-                if (!metronomic || _metronome is null)
+                if (unquiescing || !metronomic || (metronomic && !_driver.HasInternalMetronome))
                 {
                     var gap = ClockOffsetUnitsToTimeSpan(interval.ClockOffset - previousInterval.ClockOffset) - MaxIntervalTimeSpan;
                     if (gap > TimeSpan.Zero)
@@ -291,7 +307,7 @@ namespace ClockQuantization
                 }
             }
 
-            var e = new NewIntervalEventArgs(_clock.ClockOffsetToUtcDateTimeOffset(interval.ClockOffset), metronomic, detectedGap);
+            var e = new NewIntervalEventArgs(_driver.ClockOffsetToUtcDateTimeOffset(interval.ClockOffset), metronomic, detectedGap);
 
             return new AdvancePreparationInfo(interval, e);
         }
@@ -303,7 +319,7 @@ namespace ClockQuantization
             var e = preparation.EventArgs;
             if (e.IsMetronomic)
             {
-                NextMetronomicClockOffset = _clock.DateTimeOffsetToClockOffset(e.DateTimeOffset + MaxIntervalTimeSpan);
+                NextMetronomicClockOffset = _driver.DateTimeOffsetToClockOffset(e.DateTimeOffset + MaxIntervalTimeSpan);
             }
 
             OnAdvanced(e);
@@ -316,17 +332,43 @@ namespace ClockQuantization
             return preparation.Interval;
         }
 
-        private void Metronome_TimerCallback(object? _) => Context_MetronomeTicked(null, EventArgs.Empty);
+        private void Driver_MetronomeTicked(object? _, EventArgs __)
+        {
+            lock (_quiescingLockObject)
+            {
+                // Ensure that any in-flight MetronomeTicked event during quiescing transition does not knock us out of a quiesent state that was juuuuuuust established.
+                if (!IsQuiescent)
+                {
+                    Advance(metronomic: true);
+                }
+            }
+        }
 
-        private void Context_MetronomeTicked(object? _, EventArgs __) => Advance(metronomic: true);
+        private void Driver_ClockAdjusted(object? _, EventArgs __)
+        {
+            // Allow clock adjustemts to take us out of quiesent state (race possible; small chance of in-flight event, as underlying driver is quisced as well).
+            Advance(metronomic: false);
+        }
 
-        private void Context_ClockAdjusted(object? _, EventArgs __) => Advance(metronomic: false);
 
         #region IAsyncDisposable/IDisposable
+
+        private int _areEventHandlersDetached;
+        private void DetachEventHandlers()
+        {
+            if (Interlocked.CompareExchange(ref _areEventHandlersDetached, 1, 0) == 0)
+            {
+                _driver.ClockAdjusted   -= Driver_ClockAdjusted;
+                _driver.MetronomeTicked -= Driver_MetronomeTicked;
+            }
+        }
 
         /// <inheritdoc/>
         public void Dispose()
         {
+            // This method is re-entrant
+            DetachEventHandlers();
+
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
@@ -334,6 +376,9 @@ namespace ClockQuantization
         /// <inheritdoc/>
         public async ValueTask DisposeAsync()
         {
+            // This method is re-entrant
+            DetachEventHandlers();
+
             await DisposeAsyncCore();
 
             Dispose(disposing: false);
@@ -345,39 +390,18 @@ namespace ClockQuantization
         {
             if (disposing)
             {
-                _metronome?.Dispose();
+                // This method is re-entrant and mutually co-existent with _driver.DisposeAsyncCore()
+                _driver.Dispose();
             }
-
-            _metronome = null;
         }
 
         /// <inheritdoc/>
         protected virtual async ValueTask DisposeAsyncCore()
         {
-            if (_metronome is null)
-            {
-                goto done;
-            }
-
-#if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
-            if (_metronome is IAsyncDisposable asyncDisposable)
-            {
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-                goto finish;
-            }
-#else
-            await default(ValueTask).ConfigureAwait(false);
-#endif
-            _metronome!.Dispose();
-
-#if NETSTANDARD2_1 || NETCOREAPP3_0 || NETCOREAPP3_1 || NET5_0 || NET5_0_OR_GREATER
-finish:
-#endif
-            _metronome = null;
-done:
-            ;
+            // This method is re-entrant and mutually co-existent with _driver.Dispose()
+            await _driver.DisposeAsync().ConfigureAwait(false);
         }
 
-#endregion
+        #endregion
     }
 }

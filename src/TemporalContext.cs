@@ -27,7 +27,7 @@ namespace ClockQuantization
         long ClockOffsetUnitsPerMillisecond { get; }
 
         /// <summary>
-        /// Converts <paramref name="offset"/> to a <see cref="DateTimeOffset"/> in UTC.
+        /// Converts clock-specific <paramref name="offset"/> to a <see cref="DateTimeOffset"/> in UTC.
         /// </summary>
         /// <param name="offset">The offset to convert</param>
         /// <returns>The corresponding <see cref="DateTimeOffset"/></returns>
@@ -47,9 +47,9 @@ namespace ClockQuantization
     public interface ISystemClockTemporalContext
     {
         /// <value>
-        /// <see langword="true"/> if the temporal context provides a metronome feature - i.e., if it fires <see cref="MetronomeTicked"/> events.
+        /// A non-<see langword="null"/> value if the temporal context provides a metronome feature - i.e., if it fires <see cref="MetronomeTicked"/> events.
         /// </value>
-        bool ProvidesMetronome { get; }
+        TimeSpan? MetronomeIntervalTimeSpan { get; }
 
         /// <summary>
         /// An event that can be raised to inform listeners that the <see cref="ISystemClock"/> was adjusted.
